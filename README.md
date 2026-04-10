@@ -30,9 +30,9 @@ End-to-end pipeline for uncertainty quantification (UQ) of a reinforced-concrete
 ## Results Gallery
 Representative outputs are shown below; full details are available in the report and output folders.
 
-| Pipeline Summary Dashboard | Surrogate Overall Score |
-|---|---|
-| ![Pipeline summary](07_processing/10_final_outputs/00_pipeline_summary_dashboard.png) | ![Overall score](07_processing/06_surrogate_comparison/comparison_plots/04_overall_score.png) |
+| Surrogate Overall Score |
+|---|
+| ![Overall score](07_processing/06_surrogate_comparison/comparison_plots/04_overall_score.png) |
 
 | UQ Envelope (Force) | Failure Probabilities |
 |---|---|
