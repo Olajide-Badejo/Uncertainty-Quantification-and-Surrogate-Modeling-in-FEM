@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Local Python executables and activation scripts (present in this folder)
+python.exe
+pythonw.exe
+pip*.exe
+f2py.exe
+isympy.exe
+salib.exe
+torchrun.exe
+torchfrtrace.exe
+ttx.exe
+pyft*.exe
+fonttools.exe
+activate
+activate.bat
+activate.fish
+Activate.ps1
+deactivate.bat
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Large/generated data and results
+abaqus_inp/
+abaqus_jobs/
+outputs_inp/
+02_abaqus/extracted_data/
+02_abaqus/results/
+02_abaqus/fem_visualizations/
+02_abaqus/fem_reports/
+03_postprocess/01_extracted_data/
+04_PCA/01_pca_reduction/models/
+04_PCA/01_pca_reduction/outputs/
+05_autoencoder_gpr/data_preprocessed/
+05_autoencoder_gpr/output_*/
+06_shape_scale_gpr/output_*/
+07_processing/06_surrogate_comparison/
+07_processing/07_fem_validation/
+07_processing/08_uncertainty_quantification_FIXED/
+07_processing/09_sensitivity_analysis_FIXED/
+07_processing/10_final_outputs/
+*.png
+*.pdf
+*.xlsx
+*.npz
+*.npy
+
+# Logs
+*.log
