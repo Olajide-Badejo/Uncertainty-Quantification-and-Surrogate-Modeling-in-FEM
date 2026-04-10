@@ -13,6 +13,39 @@ End-to-end pipeline for uncertainty quantification (UQ) of a reinforced-concrete
 - Performs large-scale UQ and sensitivity analysis.
 - Produces publication-ready plots and summary outputs.
 
+## Key Results (Current Run)
+- Best-performing surrogate: **AE+GPR** (overall score: **87.90**).
+- Surrogate accuracy (AE+GPR):
+  - Force prediction `R^2`: **0.763**
+  - Damage prediction `R^2`: **0.987**
+- UQ on **15,000** evaluations:
+  - Peak force mean: **36.32 kN** (P05-P95: **30.35-42.62 kN**)
+  - Final damage mean: **0.9495** (P05-P95: **0.9414-0.9574**)
+- Estimated failure probabilities:
+  - Low capacity: **8.15%**
+  - High damage: **2.20%**
+  - Any failure: **10.16%**
+- Sensitivity (Monte Carlo ranking, peak force): **`fc` > `c_bot` > `c_top`**.
+
+## Results Gallery
+Representative outputs are shown below; full details are available in the report and output folders.
+
+| Pipeline Summary Dashboard | Surrogate Overall Score |
+|---|---|
+| ![Pipeline summary](07_processing/10_final_outputs/00_pipeline_summary_dashboard.png) | ![Overall score](07_processing/06_surrogate_comparison/comparison_plots/04_overall_score.png) |
+
+| UQ Envelope (Force) | Failure Probabilities |
+|---|---|
+| ![Force UQ](07_processing/08_uncertainty_quantification_FIXED/plots/01_force_uq.png) | ![Failure probabilities](07_processing/08_uncertainty_quantification_FIXED/plots/05_failure_probabilities.png) |
+
+| Sensitivity Rankings | Example FEM vs Surrogate Curve (Report Figure) |
+|---|---|
+| ![Sensitivity rankings](07_processing/10_final_outputs/04_sensitivity_rankings.png) | ![Report sample curve](report/test_sample_0212.png) |
+
+## Report
+- Full technical report: [`report/Report.pdf`](report/Report.pdf)
+- Presentation slides: [`report/Presentation.pptx`](report/Presentation.pptx)
+
 ## Project Layout
 - `01_samplying/`: input sampling and quality checks
 - `02_abaqus/`: Abaqus job orchestration and extraction
