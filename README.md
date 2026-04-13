@@ -70,6 +70,12 @@ pip install -r requirements.txt
 python 07_processing/run_uq_pipeline.py --mode all
 ```
 
+## Development Checks
+- Install dev tools: `pip install -r requirements-dev.txt`
+- Run syntax sweep: `python tests/test_syntax.py`
+- Run smoke tests: `pytest tests/ -v --tb=short`
+- Run lint gate: `flake8 . --select=E9,F63,F7,F82 --max-line-length=120`
+
 ## Abaqus Notes
 - Abaqus-required scripts must be run with Abaqus Python where applicable.
 - Set Abaqus command if needed:
@@ -96,3 +102,6 @@ $env:ABAQUS_CMD="C:\SIMULIA\Commands\abaqus.bat"
 ## Authors
 - Olajide Badejo
 - Sulaiman Abdul-Hafiz Akanmu
+
+## License
+This project is licensed under the MIT License. See `LICENSE`.

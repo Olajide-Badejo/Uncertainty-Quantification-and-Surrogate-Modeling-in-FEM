@@ -129,12 +129,12 @@ class AmplifiedUQSurrogate:
     def _load_ae(self, path):
         try:
             ckpt = self.torch.load(path, map_location="cpu", weights_only=False)
-        except:
+        except Exception:
             try:
                 import numpy as _np
                 self.torch.serialization.add_safe_globals([_np._core.multiarray.scalar])
                 ckpt = self.torch.load(path, map_location="cpu", weights_only=False)
-            except:
+            except Exception:
                 raise
 
         use_monotonic = ckpt.get("use_monotonic", False)
@@ -530,7 +530,7 @@ def compute_correlations(mc: Dict) -> Dict:
 # PLOTTING
 # =============================================================================
 
-def create_plots(mc: Dict, stats: Dict, pf: Dict, corr: Dict, out_dir: Path):
+def create_plots(mc: Dict, stats: Dict, pf: Dict, corr: Dict, out_dir: Path, base: Path):
     """Create all plots."""
     out_dir.mkdir(parents=True, exist_ok=True)
     
@@ -593,7 +593,7 @@ def create_plots(mc: Dict, stats: Dict, pf: Dict, corr: Dict, out_dir: Path):
     ax.axvline(pf['low_capacity']['threshold'], color='blue', ls='-', lw=2.5,    # Threshold
                label=f"Threshold: {pf['low_capacity']['threshold']:.0f} N")
         # --- EXCEEDANCE OF F_global_max ---
-    data_dr = BASE / "05_autoencoder_gpr" / "data_preprocessed" / "F_global_max.npy"
+    data_dr = base / "05_autoencoder_gpr" / "data_preprocessed" / "F_global_max.npy"
     Fmax = float(np.load(data_dr))
     peak_forces = mc['peak_forces']
     exceed_count = np.sum(peak_forces > Fmax)
@@ -755,7 +755,7 @@ def main():
     pf = compute_failure_probabilities(mc_results, stats, config)
     corr = compute_correlations(mc_results)
     
-    create_plots(mc_results, stats, pf, corr, config.OUT_DIR / "plots")
+    create_plots(mc_results, stats, pf, corr, config.OUT_DIR / "plots", config.BASE)
     save_results(mc_results, stats, pf, corr, config)
     
     print("\n" + "="*80)

@@ -24,6 +24,13 @@ torchfrtrace.exe
 ttx.exe
 pyft*.exe
 fonttools.exe
+# Venv console-scripts and profiling tools committed by accident
+numpy-config.exe
+tqdm.exe
+get_gprof
+get_objgraph
+undill
+
 activate
 activate.bat
 activate.fish

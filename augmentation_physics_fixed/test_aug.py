@@ -29,11 +29,11 @@ PHYSICAL_COLS = ["fc", "E", "c_nom_top_mm", "c_nom_bottom_mm"]  # keep what matt
 # PATHS
 # ------------------------------------------------------------
 ROOT      = Path(__file__).resolve().parents[1]
-INPUT_CSV = Path(r".\01_samplying\processed_inputs_4.csv")
+INPUT_CSV = ROOT / "01_samplying" / "processed_inputs_4.csv"
 LOAD_CSV  = ROOT / "03_postprocess/results_4/load_displacement_full.csv"
 CRACK_CSV = ROOT / "03_postprocess/results_4/crack_evolution_full.csv"
 
-OUT_DIR   = Path(r".\augmentation_physics_fixed")
+OUT_DIR   = ROOT / "augmentation_physics_fixed"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 OUT_INPUT = OUT_DIR / "processed_inputs_2_aug.csv"

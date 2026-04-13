@@ -152,7 +152,7 @@ fig, axs = plt.subplots(1, 3, figsize=(15, 4))
 
 # fcm (lognormal)
 probplot(np.log(df['Fcm_MPa']), dist="norm", plot=axs[0])
-axs[0].set_title("Q-Q Plot: $\ln(f_{cm})$ vs Normal")
+axs[0].set_title(r"Q-Q Plot: $\ln(f_{cm})$ vs Normal")
 axs[0].grid(True, alpha=0.3)
 
 # c_bot (normal)

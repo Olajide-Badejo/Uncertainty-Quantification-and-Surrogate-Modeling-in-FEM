@@ -24,7 +24,7 @@ try:
     from SALib.sample import saltelli
     from SALib.analyze import sobol
     HAS_SALIB = True
-except:
+except ImportError:
     HAS_SALIB = False
     print("⚠ SALib not available, using fallback methods")
 
@@ -122,12 +122,12 @@ class AmplifiedSurrogate:
     def _load_ae(self, path):
         try:
             ckpt = self.torch.load(path, map_location="cpu", weights_only=False)
-        except:
+        except Exception:
             try:
                 import numpy as _np
                 self.torch.serialization.add_safe_globals([_np._core.multiarray.scalar])
                 ckpt = self.torch.load(path, map_location="cpu", weights_only=False)
-            except:
+            except Exception:
                 raise
 
         use_monotonic = ckpt.get("use_monotonic", False)
@@ -259,7 +259,7 @@ def run_mc_sensitivity(model, config: Config) -> Dict:
             qois = model.predict(fc, cbot, ctop)
             for qoi in config.QOIS:
                 Y[qoi][i] = qois[qoi]
-        except:
+        except Exception:
             for qoi in config.QOIS:
                 Y[qoi][i] = np.nan
     
@@ -378,7 +378,7 @@ def run_sobol_analysis(model, config: Config) -> Dict:
             qois = model.predict(fc, cbot, ctop)
             for qoi_name in config.QOIS:
                 results[qoi_name].append(qois[qoi_name])
-        except:
+        except Exception:
             for qoi_name in config.QOIS:
                 results[qoi_name].append(np.nan)
     
@@ -467,7 +467,7 @@ def compute_gradient_sensitivity(model, config: Config) -> Dict:
             qois_base = model.predict(fc, cbot, ctop)
             for qoi in config.QOIS:
                 base_values[qoi][i] = qois_base[qoi]
-        except:
+        except Exception:
             continue
         
         # Gradients
@@ -484,7 +484,7 @@ def compute_gradient_sensitivity(model, config: Config) -> Dict:
                 for qoi in config.QOIS:
                     grad = (qois_pert[qoi] - qois_base[qoi]) / h
                     gradients[qoi][i, param_idx] = grad
-            except:
+            except Exception:
                 pass
     
     print("\nComputing statistics...")
@@ -547,7 +547,7 @@ def compute_rf_importance(model, config: Config) -> Dict:
             qois = model.predict(fc, cbot, ctop)
             for qoi_name in config.QOIS:
                 Y[qoi_name][i] = qois[qoi_name]
-        except:
+        except Exception:
             for qoi_name in config.QOIS:
                 Y[qoi_name][i] = np.nan
     
