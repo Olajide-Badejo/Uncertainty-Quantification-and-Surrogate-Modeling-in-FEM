@@ -1,0 +1,53 @@
+name: report
+
+# Build spec section 18: report.yml builds the LaTeX on a TeX Live container and uploads the
+# PDF artifact. The PDF itself is gitignored, so this workflow is how a compiled copy exists
+# anywhere other than a developer's machine.
+#
+# The build needs no Python and no artifact store. Every number reaches main.tex through the
+# committed fragments under report/tables/, and every figure through the committed sources
+# under report/figures/, which is exactly why those fragments are committed while the PDF is
+# not. A staleness test in the main CI workflow is what keeps them honest.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "report/**"
+      - ".github/workflows/report.yml"
+  pull_request:
+    paths:
+      - "report/**"
+      - ".github/workflows/report.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: latexmk (TeX Live)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Refuse a report with an em dash or an en dash
+        # Ground rule 3, checked here as well as in ci.yml, because this workflow is the one
+        # that can be triggered on a report only change.
+        run: python scripts/dash_lint.py
+
+      - name: Build the report
+        uses: xu-cheng/latex-action@v3
+        with:
+          root_file: main.tex
+          working_directory: report
+          latexmk_use_xelatex: false
+          args: -pdf -halt-on-error -interaction=nonstopmode -file-line-error
+
+      - name: Upload the PDF
+        uses: actions/upload-artifact@v4
+        with:
+          name: ufem-report
+          path: report/main.pdf
+          if-no-files-found: error
+          retention-days: 30
