@@ -291,6 +291,20 @@ it originally had were a genuinely too wide weighting table and one unbreakable 
 fixed at the source rather than by widening the margin. `ruff`, `dash_lint.py` and
 `check_file_sizes.py` all clean.
 
+**A defect the staleness gate caught on itself.** After everything else was committed I
+deleted the audit stage directory and reran cold to check determinism. The AUC and the Brier
+score came back bit identical, 0.7018451845184518 and 0.21928970359220137, which is the
+result I wanted. But `tests/test_data_card.py` then failed, and the diff was one line: the
+provenance table's audit wall time had moved from 9.50 s to 9.56 s. I had put wall times into
+a document that a test compares byte for byte. That is a gate that fires on scheduling noise
+rather than on numbers, and a gate that cries wolf is a gate someone eventually mutes, at
+which point it stops catching the drift it exists for. Wall times still live in every stage
+manifest and in this log, where they belong; the card's provenance table now lists the output
+digests instead, which is the thing that actually establishes provenance. A test now asserts
+that no generated file embeds a wall time at all, so the next person cannot reintroduce it
+without being told why. Full suite 194 tests after the fix, and the card survives a
+`ufem run audit --force` unchanged.
+
 **What P3 inherits.** A callable validity domain that raises rather than guessing, a
 completion model whose calibration is measured rather than assumed, and a report whose
 numbers cannot drift from the pipeline because they are not in the report. The registration
