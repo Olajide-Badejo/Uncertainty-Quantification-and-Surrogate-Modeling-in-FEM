@@ -152,6 +152,110 @@ of spec section 5.8, so `grid.initial_stiffness` raises instead, naming the wind
 point count. On the real campaign the fallback never fires, which is precisely why leaving it
 in would have been free and wrong.
 
+## 2026-08-30, Phase P2
+
+### The completion model is the GPC, and the choice was measured
+
+Build spec 9.4 names a GP classifier as the completion probability model with a regularized
+logistic regression as a pre authorized fallback. The Gaussian process classifier shipped.
+Here is why, and more importantly here is how the pipeline decides rather than how I did.
+
+`audit.fit_completion_model` does not pick an estimator. It tries the configured primary,
+cross validates it, and checks two floors that live in `configs/pipeline.yaml`: a minimum ROC
+AUC (0.55) and a minimum spread of the predicted probabilities (0.01). The second floor is
+the one that catches the real failure mode of a GPC on a nearly balanced binary outcome,
+which is collapsing to a near constant prediction at the base rate that still scores a
+respectable AUC. Only if a floor is breached does the logistic fallback run, and the report
+and manifest record the attempt, the measurement, and the reason either way. So the estimator
+that shipped is a recorded outcome, not a decision buried in a commit message.
+
+The GPC cleared both floors on the first attempt: cross validated AUC 0.7018 against the 0.55
+floor, prediction spread 0.65 against the 0.01 floor. The fallback was never taken, and
+`completion_model.json` says `"fallback_taken": false` alongside the measurements that made
+it so.
+
+**Why prefer the GPC at all, given that a logistic model would have been simpler.** The
+failure rate is not monotone in the top cover. It runs 76, 55, 26, 45 percent across the four
+quartiles, so the highest quartile fails more than the third. A logistic regression in the
+raw features cannot represent that shape at all; it would fit a monotone surface through a
+non monotone pattern and report the residual as noise. The Matern kernel represents it
+directly, which is visible in the left panel of the completion surface figure as a closed
+high failure region rather than a half plane. Since the whole purpose of this model is to
+draw a boundary around a specific corner of the input space, the ability to draw a boundary
+that is not a hyperplane is the requirement, not a refinement.
+
+**The cost of that choice, stated.** The GPC is about fifty times slower to fit than the
+logistic model and dominates the audit stage's 9.5 s wall time. At n = 400 that is
+irrelevant. If a Track B campaign pushes the design into the thousands, this is the first
+thing that will need revisiting, and the fallback is already wired to take over.
+
+**A fitted lengthscale that saturates, and why it is not a defect.** The fit reports
+lengthscales of 1.38, 19.7 and 0.80 on the standardized (Fcm, c_bottom, c_top). The bottom
+cover's is an order of magnitude larger than the others and some cross validation folds push
+it to the configured upper bound, which makes scikit-learn emit a convergence warning. That
+is the kernel stating that the bottom cover carries no signal, which is exactly what the chi
+squared test independently says at p = 0.30. I raised the bound from 100 to 1000 to 10000 to
+check whether it was a fitting artifact; the cross validated AUC stayed at 0.7018 to four
+decimals every time, so it is a flat direction in the marginal likelihood rather than an
+optimizer that has not converged. The bound is left at 1000, which is far above the unit
+scale of standardized features, and the fitted lengthscales are recorded in the manifest
+under `fitted_hyperparameters` so the saturation is a visible measurement rather than
+something a reader has to infer from a warning.
+
+### Deviation: the audit stage runs after grid, not before it
+
+The P0 skeleton registered the stage order as ingest, audit, grid, following the order build
+spec section 7.1 lists the stages in. P2 moved audit after grid.
+
+The reclassification and the censoring statistics need only the ingest artifacts, so on that
+part of the stage the original order was correct. The importance weighting study of spec 9.4
+is what forces the move: it reweights the headline QoI statistics, and those are extracted by
+the grid stage into `qoi.parquet`. The alternatives were to split audit into two stages that
+bracket grid, or to have audit recompute the QoI schedule itself. The first doubles the
+artifact directories and the manifests for one dependency; the second is a second
+implementation of the QoI extractors, which is the kind of duplication that eventually
+disagrees with itself. Reordering one entry in `runner.STAGES` was the smaller change and it
+changes nothing about what any stage computes.
+
+`ufem run all` therefore runs ingest, grid, audit. The reason is recorded as a comment on the
+`STAGES` table itself, where someone changing the order will actually read it.
+
+### The validity domain is an intersection, not a threshold
+
+Build spec 9.4 defines the validity domain as the region where P(complete) is at least 0.5
+*and* the design density is non negligible. It would have been easy to implement only the
+first half, since that is the part the completion model provides directly, and the tests
+would have passed: the censored corner is rejected on probability alone.
+
+I implemented both, and `tests/test_validity.py` pins the distinction explicitly. One test
+asserts that a query far outside the design box is rejected; another asserts that the
+censored corner sits *inside* the box and is rejected by the probability, so the two
+conditions are demonstrably doing different work. Without that second test, the contract
+could silently degrade into a bounding box check the day someone simplified the model, and
+every test would still be green.
+
+The design density condition is implemented as the box of the executed design rather than as
+a convex hull. At three dimensions with 400 space filling LHS points the two are nearly the
+same region, the box is exactly reproducible from six numbers stored in the artifact, and a
+hull would need scipy.spatial at query time in the UI. If a later campaign produces a design
+with a genuinely non convex or clustered footprint, this is the assumption to revisit, and
+`hull_expansion` is already in the config as the knob that would widen it.
+
+### Generated report fragments are committed, the PDF is not
+
+`report/tables/*.tex` is generated by `scripts/make_data_card.py` from the artifact store, and
+it is committed anyway. That looks like a contradiction of the rule that generated files stay
+out of git, so the reasoning is worth writing down.
+
+The fragments are small text files, they are what makes `report.yml` able to build the PDF on
+a runner with no artifact store and no Python stack, and committing them means a reader of the
+repository can see every number the report claims without running anything. The staleness gate
+in `tests/test_data_card.py` is what keeps that safe: it regenerates all six files and asserts
+byte identity, so a committed fragment that has drifted from the pipeline fails the suite
+rather than quietly misreporting. The PDF is the opposite case, a large binary that no test
+can meaningfully diff, so it stays gitignored and is published as a CI artifact instead. The
+`.gitignore` carries this reasoning as a comment next to the rule.
+
 <!-- BEGIN RESOLVED VERSIONS -->
 
 ### Resolved version matrix, 2026-08-30

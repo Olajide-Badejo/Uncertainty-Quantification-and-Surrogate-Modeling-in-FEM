@@ -176,3 +176,124 @@ faults stopped the `lint` job and left the test jobs untouched, and the broken i
 collection in both `test-fast` matrix legs. That distinction is the whole value of the
 exercise. A gate that goes red for the wrong reason is a gate that will go green for the
 wrong reason too.
+
+## 2026-08-30, Phase P2: audit, censoring model, first compiled report
+
+The phase that turns "the campaign is censored" from a caveat in a document into an object
+the pipeline can be held to.
+
+**The reclassification is a measurement, not a recall.** `audit.classify_samples` reads the
+ingest artifacts and decides all 400 rows against five criteria that live in the `audit:`
+block of `configs/pipeline.yaml`: full displacement span, zero non finite, monotone
+displacement, full step time, and a minimum increment count. It measured 198 valid, 202
+missing, 0 partial and agreed with the committed `sample_validity.csv` on all 400 rows with
+zero disagreements, which is the P2 gate. The 12 quartile failure rates matched the committed
+audit exactly, integer for integer, and the regenerated tests reproduce the audit's own p
+values to 1e-9: c_top chi squared 2.929e-11 with point biserial -0.2432, Fcm 0.0058,
+c_bottom 0.303. I gated on the integer counts rather than on the float rates, because a rate
+is a ratio of two integers over the same 400 samples and there is no floating point slack to
+allow for. Allowing some would have meant the gate could not tell a real change from a
+rounding difference.
+
+**The `partial` tier has no positive case in this data, so I built one.** Every present run
+in the inherited campaign is complete, so the branch that classifies a partial run is never
+exercised by the real data. That is precisely the branch that has to work the day a Track B
+rerun stops at 12 mm. `tests/test_audit.py` drives it on synthetic frames, one per failure
+mode: short displacement span, too few increments, reversed displacement, unfinished step
+time. A tier that is only ever tested by data that happens not to contain it is an untested
+branch wearing a passing test.
+
+**GPC over logistic, and the guard that made it a measurement.** The Gaussian process
+classifier shipped. It was not assumed: `fit_completion_model` tries the primary, measures
+its cross validated AUC and its prediction spread, and takes the pre authorized logistic
+fallback only if a configured floor is breached, recording the attempt either way. The GPC
+cleared both floors on the first attempt (AUC 0.7018 against a 0.55 floor, spread 0.65
+against 0.01) so the fallback was never taken, and the manifest says so rather than leaving
+it to be inferred from the absence of a note.
+
+**The AUC is modest and I did not tune it.** 0.7018, with a 90 percent bootstrap interval of
+[0.6576, 0.7419] over 1000 resamples. That is what a three input model of a binary solver
+outcome buys when half the design failed, the effect is carried mostly by one input, and the
+production logs that would have explained the rest were not preserved. What matters for the
+use the model is actually put to is calibration, not ranking, because the validity domain
+thresholds a probability: Brier 0.2193 against 0.2500 for the base rate predictor, expected
+calibration error 0.0257, and a reliability table whose predicted and empirical rates track
+each other across all eight populated bins. The one visibly off bin holds two samples out of
+400, and the figure draws it at two samples' worth of area, which is the honest way to show
+it.
+
+**The fold honesty is inside the pipeline, not around it.** The standardizer is a step of the
+sklearn `Pipeline`, so every cross validation fold refits it on its own training half. Doing
+it the easy way, scaling all 400 rows once and then cross validating, would have leaked each
+test fold's location and scale into its training fold. The leak is small at this sample size,
+which is exactly why it would never have been noticed.
+
+**The lengthscale that wants to be infinite.** The GPC fit reports a lengthscale of about 20
+on the standardized bottom cover against 1.4 and 0.8 for the other two, and some folds push
+it to the configured bound and emit a convergence warning. This is the kernel correctly
+saying the bottom cover has no effect, which is the same thing the chi squared test says at
+p = 0.30. I raised the bound twice to see whether it mattered and the AUC did not move from
+0.7018 in the fourth decimal, so it is a flat direction in the likelihood rather than a fit
+problem. Rather than chase an unbounded lengthscale, I recorded the fitted values in the
+manifest under `fitted_hyperparameters`, so the saturation is visible as data instead of
+being inferred from a warning nobody reads.
+
+**The validity domain is an intersection, deliberately.** P(complete) at or above 0.5 *and*
+inside the box of the executed design. The second half is the one that is easy to leave out
+and the one that matters most: a smooth kernel asked about a point far outside the design
+will answer, and a high completion probability with no design points beneath it is the
+manufactured confidence this whole project exists to eliminate. The domain admits 52.2
+percent of the design, but it separates the outcomes properly, 71.2 percent of completed runs
+against 33.7 percent of failed ones, and `tests/test_validity.py` pins that the censored
+corner (low top cover, high strength) is rejected by the *probability* rather than merely by
+the box, so the contract cannot silently degrade into a bounding box check.
+
+**The weighting study bounds the bias, and the answer is small.** Inverse probability of
+completion weights on the 198 survivors move the peak load mean by 0.08 percent and nothing
+in the table by more than 4.68 percent, on the residual load at 20 mm, which is the quantity
+most sensitive to the softening branch and therefore to exactly the configurations that
+failed. Normalized weights top out at 3.20 for an effective sample size of 170 against a
+nominal 198, so the reweighting is not being carried by a few survivors. That result cuts
+both ways and the report says so: it licenses the unweighted descriptive statistics, and it
+does not license extrapolation into the corner, where the problem is missing data rather than
+a biased average.
+
+**Every number in the report now arrives through a file.** `scripts/make_data_card.py` reads
+only artifacts and manifests and writes `docs/DATA_CARD.md` plus 61 LaTeX macros and four
+table fragments under `report/tables/`. `main.tex` contains no digits in its prose that were
+not inputs. A staleness test regenerates all six files and asserts byte identity, so a card
+that has drifted from the pipeline is a failing test rather than a document nobody rechecked.
+Writing the generator caught a real defect immediately: my first macro naming scheme took the
+first two underscore separated parts of each column name, and both covers begin `c_nom_`, so
+the top cover's statistics were silently overwriting the bottom cover's. A duplicate name
+guard in the generator now makes that collision an error at the point the name is chosen.
+
+**The figure script no longer reaches outside the repository.** It used to read
+`Scripts_2_0/03_postprocess/` and a loose `data_audit/` directory by absolute path. It now
+reads the artifact store for the current config hash and fails with a named diagnostic if a
+stage has not run. The style moved into `src/ufem/plotting/style.py`, the single style module
+of spec section 8, and the two new figures (completion surface, calibration diagram) live in
+`src/ufem/plotting/censoring.py` and take arrays rather than fitting anything, so no figure
+is ever the place a number is first computed.
+
+**One deviation, recorded.** The `audit` stage runs after `grid`, not between `ingest` and
+`grid` as the P0 skeleton registered it. Its classification and censoring statistics need
+only the ingest artifacts, but the importance weighting study reweights the QoI table that
+`grid` extracts, and the alternatives were to split the stage in two or to have it recompute
+the QoI schedule itself. Reordering was the smaller change; the reasoning is in
+`docs/DESIGN_DECISIONS.md`.
+
+**Measured, not estimated.** Ingest 3.27 s, grid 0.20 s, audit 9.50 s, all from the
+manifests; the audit stage's time is almost entirely the 5 fold cross validation of the GPC
+plus the 1000 resample bootstrap. Full suite 188 tests in 18.5 s, up from 139 at P1.
+`latexmk -pdf -halt-on-error` builds `main.pdf` at 10 pages with zero overfull boxes; the two
+it originally had were a genuinely too wide weighting table and one unbreakable line, both
+fixed at the source rather than by widening the margin. `ruff`, `dash_lint.py` and
+`check_file_sizes.py` all clean.
+
+**What P3 inherits.** A callable validity domain that raises rather than guessing, a
+completion model whose calibration is measured rather than assumed, and a report whose
+numbers cannot drift from the pipeline because they are not in the report. The registration
+stage should consult `ufem.validity.in_validity_domain` before it claims anything about a
+region of the input space, and the surrogate stage must carry the domain into its own
+artifact.
