@@ -1,54 +1,82 @@
-﻿name: CI - Lint and Syntax
+name: CI
 
+# CI has no GPU and must not pretend otherwise (build spec section 18): torch comes from
+# the default index as the CPU build everywhere in this file.
 on:
   push:
-    branches: ["main"]
+    branches:
+      - main
+      - "phase/**"
   pull_request:
-    branches: ["main"]
+
+permissions:
+  contents: read
 
 jobs:
-  lint-and-check:
-    name: Python ${{ matrix.python-version }} - lint and syntax
+  lint:
+    name: lint (dash, sizes, ruff)
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install ruff
+        run: python -m pip install --upgrade pip ruff==0.16.5
+
+      - name: Dash and banned identifier lint
+        run: python scripts/dash_lint.py
+
+      - name: File size gate
+        run: python scripts/check_file_sizes.py
+
+      - name: Ruff
+        run: ruff check src tests scripts
+
+  test-fast:
+    name: test-fast (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11"]
-
+        os: [ubuntu-latest, windows-latest]
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
         with:
-          python-version: ${{ matrix.python-version }}
-          cache: "pip"
+          fetch-depth: 0
 
-      - name: Install CPU-only PyTorch
-        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
 
-      - name: Install project dependencies
+      - name: Install the light stack
         run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
+          python -m pip install --upgrade pip
+          python -m pip install numpy==2.5.2 scipy==1.18.1 pandas==3.0.5 scikit-learn==1.9.0 pyarrow==25.0.1 pydantic==2.13.5 PyYAML==6.0.3 pytest==9.1.1 hypothesis==6.165.10 pytest-regressions==2.11.0
 
-      - name: Install dev dependencies
-        run: pip install -r requirements-dev.txt
+      - name: Fast tests
+        run: pytest tests -m "not slow and not fullstack"
 
-      - name: Lint with flake8
+  test-full:
+    name: test-full (ubuntu, editable install)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install the full stack
         run: |
-          flake8 . \
-            --count \
-            --select=E9,F63,F7,F82 \
-            --exclude=__pycache__,.venv,venv,env,fixes \
-            --max-line-length=120 \
-            --show-source \
-            --statistics
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
 
-      - name: Compile-check all Python files
-        run: python tests/test_syntax.py
-
-      - name: Run smoke tests
-        run: pytest tests/ -v --tb=short
+      - name: Full tests
+        run: pytest tests -m "not slow"

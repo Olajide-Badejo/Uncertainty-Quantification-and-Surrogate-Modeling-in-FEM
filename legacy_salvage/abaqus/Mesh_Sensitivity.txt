@@ -1,0 +1,211 @@
+Pipeline: 2D RC Beam with Embedded Truss Rebar (Mesh-Efficient)
+0. Define modeling assumptions (lock these first)
+
+Do this once and don’t change mid-study.
+
+Plane stress, 2D beam
+
+Concrete: CPS4R
+
+Rebar: T2D2 (truss)
+
+Bond: perfect (embedded constraint)
+
+Thickness strategy (pick ONE):
+
+Option A (recommended): thickness = real beam width
+→ truss area = real bar area
+
+Option B: thickness = 1
+→ truss area = real bar area / beam width
+
+Write this at the top of your notes — most mistakes come from inconsistency here.
+
+1. Geometry & part creation
+
+Create one 2D deformable planar part for the beam cross-section (length × depth).
+
+Create wire parts for each rebar layer (bottom, top, stirrup line if needed).
+
+Place rebar wires at correct cover depth (y-coordinates matter more than x).
+
+Keep geometry simple — straight wires, no segmentation unless needed.
+
+2. Material definitions
+
+Concrete
+
+Elastic (E, ν)
+
+CDP:
+
+dilation angle, eccentricity, fb0/fc0, K
+
+small viscosity (e.g. 5e-4 to 1e-3)
+
+Compression hardening
+
+Tension stiffening (fracture-energy-based, mesh-aware)
+
+Steel
+
+Elastic–plastic (E ≈ 200 GPa, ν ≈ 0.3)
+
+Yield stress + optional hardening
+
+3. Section definitions (critical step)
+
+Concrete
+
+Solid section
+
+Thickness = chosen beam width (or 1 if unit thickness)
+
+Rebar
+
+Truss section (NOT solid)
+
+Area computed consistently with thickness choice
+
+Sanity check:
+
+Steel axial stiffness 
+𝐸
+𝐴
+EA should match real beam reinforcement.
+
+4. Assembly
+
+Instance beam (concrete)
+
+Instance rebar wires
+
+Position wires fully inside concrete domain
+
+Before moving on:
+
+Visually confirm no rebar node is outside the beam.
+
+5. Constraints
+
+Apply Embedded Element:
+
+Host = concrete element set
+
+Embedded = rebar element sets
+
+No ties, no coupling — embedded only.
+
+6. Step definition
+
+Static, nonlinear geometry ON
+
+Total step time = 1.0
+
+Initial increment small (e.g. 1e-4 to 1e-3)
+
+Allow automatic incrementation
+
+No artificial damping unless convergence demands it
+
+This step controls the displacement ramp.
+
+7. Boundary conditions & loading
+
+Supports:
+
+One support: U1 = U2 = 0
+
+Other support: U2 = 0, U1 free
+
+Loading:
+
+Displacement-controlled vertical displacement at loading point or patch
+
+Applied smoothly over the step (default ramp is fine)
+
+Avoid force control — displacement control is much more stable for CDP.
+
+8. Meshing strategy
+
+Concrete:
+
+CPS4R
+
+Aspect ratio ≈ 1 in cracking region
+
+Mesh families (example):
+
+Coarse: ~6–8 elems through depth
+
+Medium: ~12–16
+
+Fine: ~24–32
+
+Rebar:
+
+T2D2
+
+Mesh density similar to concrete in length direction
+
+9. Output requests (don’t skip this)
+
+History output
+
+Loading point: U2, RF2
+
+Rebar nodes: axial strain (LE11), axial stress (S11)
+
+Optional: reaction at supports
+
+Field output
+
+Concrete: DAMAGET, DAMAGEC, SDEG, S, PEEQ
+
+Steel: S, LE
+
+Enough frames to see crack evolution (not just start/end)
+
+10. Run → check → accept
+
+For each mesh:
+
+Check .msg and .sta:
+
+No excessive cutbacks
+
+Reasonable increment sizes
+
+Plot force–displacement curve
+
+Verify:
+
+Initial stiffness is reasonable (compare to transformed-section hand calc)
+
+Peak load stabilizes with mesh refinement
+
+Damage localizes where expected (midspan bottom fiber)
+
+11. Mesh sensitivity decision rule (“good enough”)
+
+Stop refining when all three stabilize:
+
+Peak load change < ~5–10%
+
+Initial stiffness change < ~5%
+
+Energy up to peak roughly stable
+
+Ignore crack width changes — they will be mesh-dependent in CDP.
+
+12. Document limitations (important but fast)
+
+Write one short paragraph:
+
+2D plane stress
+
+Perfect bond
+
+No bond-slip or dowel action
+
+Results valid for global response trends, not crack widths

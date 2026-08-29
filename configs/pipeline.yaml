@@ -1,0 +1,51 @@
+# Pipeline settings: grids, thresholds, kernel settings, MC sizes, limit states, paths.
+# No distribution or distribution parameter appears here. Those live only in
+# configs/probabilistic_model.yaml.
+
+schema_version: 1
+
+# The common displacement grid. Every valid v1 curve spans [0, 20] mm under displacement
+# control (U2 = 20t exactly), and the audit verified that 198 of 198 curves interpolate
+# onto 201 points with zero NaN.
+grid:
+  u_min_mm: 0.0
+  u_max_mm: 20.0
+  n_points: 201
+
+# Global normalizers, so force and displacement enter the reduction on comparable scales.
+# Chosen once, here, rather than refit per stage.
+normalizers:
+  P0_N: 40000.0
+  u0_mm: 20.0
+
+pca:
+  variance_target: 0.99
+
+kernel:
+  family: matern
+  nu: 2.5
+  ard: true
+  lengthscale_bounds: [0.05, 10.0]
+  restarts: 8
+
+conformal:
+  alphas: [0.1, 0.05]
+  K_posterior_draws: 256
+
+mc:
+  n_samples: 100000
+
+# Limit states for the reliability stage. Each is a threshold on a QoI the pipeline
+# regenerates, never a hand typed result.
+limit_states:
+  peak_load_below_N: 31000.0     # placeholder characteristic value, 5th percentile logic, refit at P7
+  residual_ratio_below: 0.5
+  damage_at_10mm_above: 0.93
+
+# One root SeedSequence per run. This entropy is an arbitrary large integer recorded here
+# so the whole spawned tree is reproducible; every stage manifest logs it back.
+seed_entropy: 866105494284971936421390281
+
+paths:
+  raw_data: legacy_salvage/data
+  artifact_root: experiments/results

@@ -1,0 +1,56 @@
+# THE probabilistic model. This file is the only place in the repository where a
+# distribution or a distribution parameter exists. Binding law 2: a stage that re declares
+# a distribution is a build error, enforced by scripts/dash_lint.py and tests/test_laws.py.
+#
+# Units: strength in MPa, cover in mm.
+
+schema_version: 1
+
+variables:
+  Fcm_MPa:
+    kind: lognormal
+    mean: 28.0
+    cov: 0.10
+    basis: >
+      JCSS Probabilistic Model Code Part 3 treats concrete compressive strength as
+      lognormal. The mean and CoV match the campaign that was actually executed: the 400
+      row LHS design realizes Fcm 27.998 +/- 2.806 MPa over [19.82, 37.93].
+
+  c_nom_bottom_mm:
+    kind: normal
+    mu: 27.0
+    sigma: 3.0
+    basis: >
+      Execution tolerance on the bottom cover, which is formed against the soffit and is
+      the better controlled of the two. The realized design gives 27.00 +/- 3.03 mm.
+
+  c_nom_top_mm:
+    kind: normal
+    mu: 223.0
+    sigma: 5.0
+    basis: >
+      Top cover is set from the free surface and is harder to control, so it carries the
+      larger sigma. The realized design gives 222.99 +/- 5.02 mm. This is the variable the
+      campaign censoring is enriched in: failures cluster in its lowest quartile.
+
+derived:
+  E_MPa:
+    expression: "22000.0 * (Fcm_MPa / 10.0) ** 0.3"
+    basis: >
+      Eurocode 2 secant modulus as a deterministic function of mean compressive strength.
+      This is not a modeling choice, it is a measurement: fitting the expression across all
+      400 design rows gives a maximum relative error of 2e-15 and Spearman rho 1.000
+      against Fcm, so E and Fcm are one random variable. E is therefore derived here and is
+      never a surrogate feature. Track B promotes the strength stiffness model error to an
+      explicit independent input instead.
+
+# The surrogate design matrix, in this order, and nothing else. ufem.config.features is
+# the only constructor that reads it.
+feature_order:
+  - Fcm_MPa
+  - c_nom_bottom_mm
+  - c_nom_top_mm
+
+# Geometry the validator checks the covers against (build spec section 6.2).
+section:
+  depth_mm: 250.0

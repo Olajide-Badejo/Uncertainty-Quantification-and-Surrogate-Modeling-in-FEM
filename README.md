@@ -1,107 +1,105 @@
-# Uncertainty Quantification for RC Beam FEM using Surrogates
+# UFEM 2.0: Calibrated Surrogate Modeling and UQ of a Softening RC Beam
 
-End-to-end pipeline for uncertainty quantification (UQ) of a reinforced-concrete beam response, built on Abaqus FEM data and reduced-order surrogate models.
+This project builds a reproducible uncertainty quantification pipeline for a reinforced
+concrete beam with material softening. From a completed campaign of Abaqus concrete damaged
+plasticity simulations it constructs a functional surrogate of the whole load displacement
+and damage evolution response, calibrates the predictive uncertainty against held out data
+rather than asserting it, quantifies the global sensitivity of the response to the
+independent input random variables three separate ways that have to agree, estimates failure
+probabilities with stated error bars, and exposes the result through a local dashboard, a
+compiled LaTeX report, and this repository, where every published number is regenerable from
+a committed manifest whose hashes resolve to real files and a real commit.
 
-## What This Project Does
-- Generates probabilistic input samples (LHS).
-- Runs Abaqus simulations and extracts response curves.
-- Builds surrogate models:
-  - PCA + GPR
-  - Autoencoder + GPR
-  - Shape-Scale PCA + GPR
-- Compares and validates surrogates against FEM.
-- Performs large-scale UQ and sensitivity analysis.
-- Produces publication-ready plots and summary outputs.
+The governing rule, and the reason the project was rebuilt rather than patched: no number
+leaves here unless the pipeline can regenerate it from raw inputs, and no uncertainty is
+reported unless it was propagated rather than manufactured.
 
-## Key Results (Current Run)
-- Best-performing surrogate: **AE+GPR** (overall score: **87.90**).
-- Surrogate accuracy (AE+GPR):
-  - Force prediction `R^2`: **0.763**
-  - Damage prediction `R^2`: **0.987**
-- UQ on **15,000** evaluations:
-  - Peak force mean: **36.32 kN** (P05-P95: **30.35-42.62 kN**)
-  - Final damage mean: **0.9495** (P05-P95: **0.9414-0.9574**)
-- Estimated failure probabilities:
-  - Low capacity: **8.15%**
-  - High damage: **2.20%**
-  - Any failure: **10.16%**
-- Sensitivity (Monte Carlo ranking, peak force): **`fc` > `c_bot` > `c_top`**.
+<!-- BEGIN INJECTED RESULTS -->
 
-## Results Gallery
-Representative outputs are shown below; full details are available in the report and output folders.
+Results are injected here from the artifact manifests at Phase P10. Nothing is claimed yet.
 
-| Surrogate Overall Score |
-|---|
-| ![Overall score](07_processing/06_surrogate_comparison/comparison_plots/04_overall_score.png) |
+<!-- END INJECTED RESULTS -->
 
-| UQ Envelope (Force) | Failure Probabilities |
-|---|---|
-| ![Force UQ](07_processing/08_uncertainty_quantification_FIXED/plots/01_force_uq.png) | ![Failure probabilities](07_processing/08_uncertainty_quantification_FIXED/plots/05_failure_probabilities.png) |
+## Status
 
-| Sensitivity Rankings | Example FEM vs Surrogate Curve (Report Figure) |
-|---|---|
-| ![Sensitivity rankings](07_processing/10_final_outputs/04_sensitivity_rankings.png) | ![Report sample curve](report/test_sample_0212.png) |
+| Phase | What it delivers | State |
+|---|---|---|
+| P0 | Scaffold, config, manifests, runner, lint, CI | Complete at this commit |
+| P1 | Ingest and common grid | Not started |
+| P2 | Audit, censoring model, first compiled report | Not started |
+| P3 | Registration and reduction | Not started |
+| P4 | Gaussian process surrogate, baselines, validation | Not started |
+| P5 | Conformal calibration, scalar and functional | Not started |
+| P6 | Sensitivity | Not started |
+| P7 | Propagation and reliability | Not started |
+| P8 | UFEM Lab dashboard | Not started |
+| P9 | Ablations and complete report | Not started |
+| P10 | Final QA, README injection, release | Not started |
 
-## Report
-- Full technical report: [`report/Report.pdf`](report/Report.pdf)
-- Presentation slides: [`report/Presentation.pptx`](report/Presentation.pptx)
+The full phase definitions and their gates are in `docs/BUILD_SPEC.md` section 22.
 
-## Project Layout
-- `01_samplying/`: input sampling and quality checks
-- `02_abaqus/`: Abaqus job orchestration and extraction
-- `03_postprocess/`: post-processing utilities
-- `04_PCA/`: PCA-based surrogate workflow
-- `05_autoencoder_gpr/`: AE + GPR workflow
-- `06_shape_scale_gpr/`: shape-scale surrogate workflow
-- `07_processing/`: comparison, validation, UQ, sensitivity, final outputs
-- `augmentation_physics_fixed/`: augmented data assets
+## Quick start
 
-## Quick Start
-1. Create a clean Python environment.
-2. Install dependencies:
+Requires CPython 3.14 on Windows or Linux.
 
-```bash
-pip install -r requirements.txt
+```powershell
+py -3.14 -m venv .venv
+.venv\Scripts\python -m pip install --upgrade pip
+.venv\Scripts\pip install -e .[dev]
+.venv\Scripts\ufem doctor
+.venv\Scripts\ufem run all
 ```
 
-3. From repository root, run:
+`ufem doctor` prints the resolved version matrix, the torch build and device, and the
+SHA-256 of the configuration, then records that matrix in `docs/DESIGN_DECISIONS.md`. Run it
+first; if it does not agree with what you expect, nothing downstream is worth reading.
 
-```bash
-python 07_processing/run_uq_pipeline.py --mode all
+`ufem run all` walks the stages in order. A stage whose cache key is unchanged prints
+`[cache hit]` and is skipped; `--force` reruns it. Stages that a later phase will implement
+raise with the phase named, so at this commit `run all` reports that `ingest` arrives in P1
+and exits nonzero. That is the intended behavior, not a failure of the install.
+
+## Repository layout
+
+```
+UFEM_2.0/
+  pyproject.toml            single source of pinned dependencies, dev extras, ufem entry point
+  configs/
+    probabilistic_model.yaml  THE distributions. Nothing else in the repo declares one.
+    pipeline.yaml             grids, thresholds, kernel settings, MC size, limit states, paths
+  src/ufem/
+    config.py               Pydantic models, the feature contract, config hashing
+    manifest.py             content addressed artifact store
+    runner.py               ufem run <stage>|all and ufem doctor, pure batch
+  data/
+    audit_reference/        committed golden values from the pre build audit, P1 gates on these
+    quarantine/             what is deliberately not used, and why
+  legacy_salvage/           read only inputs carried over from v1, never edited in place
+  v1_legacy/                the frozen v1 pipeline, release v1.0.0, read only
+  experiments/results/      artifact store, <stage>/<config hash>/manifest.json
+  report/                   main.tex plus figures and tables written only by the pipeline
+  tests/                    contract, property, golden, manufactured, integration
+  scripts/                  dash_lint.py, check_file_sizes.py
+  docs/                     BUILD_SPEC, ARCHITECTURE, DESIGN_DECISIONS, ENGINEERING_LOG, DEFECT_LOG
+  .github/workflows/        ci.yml
 ```
 
-## Development Checks
-- Install dev tools: `pip install -r requirements-dev.txt`
-- Run syntax sweep: `python tests/test_syntax.py`
-- Run smoke tests: `pytest tests/ -v --tb=short`
-- Run lint gate: `flake8 . --select=E9,F63,F7,F82 --max-line-length=120`
+## Versioning
 
-## Abaqus Notes
-- Abaqus-required scripts must be run with Abaqus Python where applicable.
-- Set Abaqus command if needed:
+- **v1.0.0** is the frozen v1 pipeline, preserved in `v1_legacy/`. Its published metrics are
+  invalid, for the reasons set out in section 5 of `docs/BUILD_SPEC.md` and summarized in
+  `v1_legacy/README.md`. It is kept as a record of the simulation campaign and as the
+  forensic archive for the corrected campaign of Track B, not as a source of results.
+- **v1.1.0** is the 2.0 overhaul, built from scratch on the same inherited data. The
+  in progress version is `1.1.0.dev0`, declared in `pyproject.toml` and reported by
+  `ufem doctor`.
 
-```bash
-# Windows PowerShell
-$env:ABAQUS_CMD="C:\SIMULIA\Commands\abaqus.bat"
-```
+## Contributing gates
 
-`02_abaqus/02_run_abaqus_jobs.py` uses `ABAQUS_CMD` from environment and defaults to `abaqus`.
-
-## Reproducibility and Portability
-- Hardcoded machine-specific absolute paths were removed.
-- Core scripts now use repository-relative paths via `Path(__file__)`.
-- Run scripts from the repository root for consistent behavior.
-
-## Typical End-to-End Flow
-1. `01_samplying/*`
-2. `02_abaqus/*`
-3. `03_postprocess/*`
-4. `04_PCA/*`, `05_autoencoder_gpr/*`, `06_shape_scale_gpr/*`
-5. `07_processing/run_uq_pipeline.py --mode all`
-
-## Authors
-- Olajide Badejo
-- Sulaiman Abdul-Hafiz Akanmu
+A change lands only when the dash and banned identifier lint passes, no tracked file exceeds
+5 MB, `ruff check src tests scripts` is clean, and the test suite passes. All four run in
+CI on every push to `main` and to any `phase/**` branch, and on every pull request.
 
 ## License
-This project is licensed under the MIT License. See `LICENSE`.
+
+MIT. See `LICENSE`.
