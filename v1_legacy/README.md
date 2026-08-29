@@ -1,3 +1,26 @@
+> **FROZEN. READ ONLY. THE NUMBERS BELOW ARE INVALID.**
+>
+> This directory is v1 exactly as it stood at release `v1.0.0`. I do not edit anything
+> under this path, and no code in `src/ufem/` imports from it. It is kept as the record of
+> how the 400 sample Abaqus campaign was designed, run, and extracted, and as the forensic
+> archive Track B works from.
+>
+> The August 2026 audit found the published v1 metrics unusable as evidence. The
+> uncertainty behind the reliability results was manufactured (a variance amplification
+> factor, a standard deviation floor, and injected multiplicative noise), all three
+> surrogates fail out of sample while the READMEs quote a different and better set of
+> numbers, and the input distributions are declared three separate times with three
+> different parameter sets. The autopsy, finding by finding with the rule that prevents
+> each recurrence, is section 5 of `docs/BUILD_SPEC.md`.
+>
+> The 570 row augmented dataset under `augmentation_physics_fixed/` is quarantined in
+> place: its generator is missing, its job IDs collide with the real FEM job IDs, and it
+> carries no synthetic flag or parent lineage. See `data/quarantine/README.md`.
+>
+> Everything from here down is the original v1 text, preserved unchanged.
+
+---
+
 # Uncertainty Quantification for RC Beam FEM using Surrogates
 
 End-to-end pipeline for uncertainty quantification (UQ) of a reinforced-concrete beam response, built on Abaqus FEM data and reduced-order surrogate models.
