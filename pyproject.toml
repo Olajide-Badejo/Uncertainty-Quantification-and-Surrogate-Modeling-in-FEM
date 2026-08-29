@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ufem"
+version = "1.1.0.dev0"
+description = "Calibrated surrogate modeling and uncertainty quantification of a softening RC beam"
+readme = "README.md"
+requires-python = ">=3.14"
+license = "MIT"
+authors = [{ name = "Olajide Badejo" }]
+
+# Pinned exactly, not bounded. The resolved matrix is recorded with its date in
+# docs/DESIGN_DECISIONS.md and again in every stage manifest.
+dependencies = [
+    "numpy==2.5.2",
+    "scipy==1.18.1",
+    "pandas==3.0.5",
+    "scikit-learn==1.9.0",
+    "pyarrow==25.0.1",
+    "pydantic==2.13.5",
+    "PyYAML==6.0.3",
+    "matplotlib==3.11.1",
+    "torch==2.13.0",
+    "gpytorch==1.15.2",
+    "openturns==1.27.post1",
+    "SALib==1.5.2",
+    "fdasrsf==2.6.10",
+    "nicegui==3.16.0",
+    "plotly==7.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "hypothesis==6.165.10",
+    "pytest-regressions==2.11.0",
+    "ruff==0.16.5",
+]
+
+[project.scripts]
+ufem = "ufem.runner:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: takes more than a few seconds, excluded from the fast CI job",
+    "fullstack: needs the full dependency set (torch, gpytorch, openturns, fdasrsf)",
+]
+
+[tool.ruff]
+line-length = 100
+exclude = ["v1_legacy", "legacy_salvage", "data_audit", "data", ".venv"]
+
+[tool.ruff.lint]
+# E722 is the bare except ban of ground rule 8.
+select = ["E", "F", "W", "I", "E722"]
+
+[tool.ruff.lint.isort]
+# The lint scripts live in scripts/ rather than in the package, but the tests import them
+# directly, so isort must not file them under third party.
+known-first-party = ["ufem", "dash_lint", "check_file_sizes"]
