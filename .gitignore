@@ -1,10 +1,11 @@
 # The repository is not a venv (build spec section 3.3).
 .venv/
 
-# Python bytecode and tool caches
+# Python bytecode, editable install metadata, and tool caches
 __pycache__/
 *.pyc
 *.pyo
+*.egg-info/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/

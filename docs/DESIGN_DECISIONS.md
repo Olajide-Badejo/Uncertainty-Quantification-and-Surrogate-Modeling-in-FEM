@@ -71,6 +71,87 @@ YAML files together, computed in `ufem.config.config_hash`. Canonical means sort
 no insignificant whitespace, so the digest is stable across two loads and moves the moment
 any parameter moves. This is what `manifest.py` stamps into every artifact.
 
+## 2026-08-30, Phase P1
+
+### The spec numbers held exactly, so there is nothing to relax
+
+Build spec section 24 says to stop and record when reality disagrees with the document. On
+the two counts P1 asserts, reality agreed to the digit. The strict increasing time filter
+removes 165 rows across 26 jobs of the load displacement table, which is exactly what
+sections 6.1 and 9.3 pin, so the assertion in `ingest.py` is a live check rather than a
+number I had to soften. The damage table needs no deduplication at all: zero jobs, zero
+rows, because it was written on the near uniform 199 to 200 point output grid rather than on
+the solver's adaptive increments. Displacement control holds at `max |U2 - 20t| = 1.43e-06`
+mm against the 1e-3 mm tolerance, and both signals carry the same 198 jobs.
+
+### Deviation: the headline statistics are compared on two different bases, not one
+
+This one is a real disagreement with the task as I received it, and it is the reason this
+entry exists.
+
+The golden gate was specified as: recompute the headline statistics from the pipeline's grid
+output and match `audit_summary.json` to 1e-9. The first half of that works perfectly. The
+`RF2_on_common_U2_grid.npy` matrix reproduces from the grid stage at a maximum absolute
+deviation of **0.0** over all 198 by 201 values, which is the strongest result the gate could
+have returned. But the headline peak load, displacement at peak and initial stiffness in
+`statistics_valid` were never computed on that grid. Reading the committed
+`data/audit_reference/audit_script.py`, the audit measured them on the solver's own adaptive
+increments, thousands of points per curve, before any interpolation. The 201 point grid is a
+resample of those curves, and a resample can only lower a maximum, so the two bases give
+genuinely different numbers:
+
+| Quantity | Raw increment basis | 201 point grid basis |
+|---|---|---|
+| Peak load mean | 38145.407 N | 38125.486 N |
+| Displacement at peak mean | 11.0820 mm | 11.0753 mm |
+| Initial stiffness mean | 13128.68 N/mm | 14144.58 N/mm |
+
+The stiffness gap is the largest and the most instructive. The window is `0 < u <= 0.1
+u_peak`, about 1.1 mm wide. On the raw increments that window holds thousands of points and
+the through origin fit is well determined; on the grid it holds two, at 0.1 and 0.2 mm, and
+the fit is dominated by the curvature the coarse spacing cannot resolve. Neither number is
+wrong. They measure different things, and forcing them to agree to 1e-9 would have meant
+either interpolating the audit or degrading the grid.
+
+So the gate compares each quantity against the basis that produced it, and
+`tests/test_golden_audit.py` says in its module docstring exactly which fields are compared
+and against which basis. `grid.py` grows one function for this, `raw_curve_qoi`, which is the
+pipeline's own implementation of the raw increment measurement, so the gate compares
+pipeline code against committed values rather than comparing the audit script to itself. On
+that footing every compared field matches at **0.0**, not merely within 1e-9: peak load,
+displacement at peak and initial stiffness on all five moments each, damage at 10 mm on the
+grid basis (10 mm is a grid node, so the bases coincide there), and the residual load at 20
+mm against the audit's own gridded `RF2_at_u_max` block.
+
+The QoI table that ships in `qoi.parquet` stays on the grid basis. It is the table the
+surrogate will be trained against, and the surrogate predicts curves on that grid, so a QoI
+measured somewhere else would be a QoI the model cannot be held to. What P4 must not do is
+quote the grid peak next to the audit's 38.15 kN as though they were the same measurement.
+
+### Two fields are deliberately not compared
+
+`damage_final` is not compared because it is the banned QoI of spec section 5.6: it is the
+same saturated table cap for all 198 runs and carries zero variance. It is absent from
+`qoi.parquet` entirely and a test enforces that.
+
+`damage_U2_at_half_max` is not compared because the two implementations are different
+estimators and I chose the second deliberately. The audit thresholded each curve against half
+of that curve's own maximum and returned the displacement of the first raw sample at or above
+it, which quantizes the answer onto the solver's increments. The pipeline thresholds against
+the fixed 0.947 saturation that spec section 9.5 names and interpolates linearly between the
+two bracketing grid points. Same intent, better conditioned, and about 0.05 mm different in
+the mean. Since it is a different estimator there is no 1e-9 claim to make about it, and
+pretending otherwise would be exactly the kind of number laundering this project exists to
+prevent.
+
+### The initial stiffness extractor raises where v1 fell back
+
+`audit_script.py` falls back to the first three points when the stiffness window holds fewer
+than two, inside a construct that hides the substitution. That is the silent fallback class
+of spec section 5.8, so `grid.initial_stiffness` raises instead, naming the window and the
+point count. On the real campaign the fallback never fires, which is precisely why leaving it
+in would have been free and wrong.
+
 <!-- BEGIN RESOLVED VERSIONS -->
 
 ### Resolved version matrix, 2026-08-30

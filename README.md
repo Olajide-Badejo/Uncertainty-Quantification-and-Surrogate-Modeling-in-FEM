@@ -24,8 +24,8 @@ Results are injected here from the artifact manifests at Phase P10. Nothing is c
 
 | Phase | What it delivers | State |
 |---|---|---|
-| P0 | Scaffold, config, manifests, runner, lint, CI | Complete at this commit |
-| P1 | Ingest and common grid | Not started |
+| P0 | Scaffold, config, manifests, runner, lint, CI | Complete |
+| P1 | Ingest and common grid | Complete at this commit |
 | P2 | Audit, censoring model, first compiled report | Not started |
 | P3 | Registration and reduction | Not started |
 | P4 | Gaussian process surrogate, baselines, validation | Not started |
@@ -56,8 +56,15 @@ first; if it does not agree with what you expect, nothing downstream is worth re
 
 `ufem run all` walks the stages in order. A stage whose cache key is unchanged prints
 `[cache hit]` and is skipped; `--force` reruns it. Stages that a later phase will implement
-raise with the phase named, so at this commit `run all` reports that `ingest` arrives in P1
-and exits nonzero. That is the intended behavior, not a failure of the install.
+raise with the phase named, so at this commit `run ingest` and `run grid` do real work and
+`run all` then reports that `audit` arrives in P2 and exits nonzero. That is the intended
+behavior, not a failure of the install.
+
+Ingest and grid read the two raw campaign CSVs from `legacy_salvage/data/`. Those are 123 MB
+and are deliberately not tracked by git; the ingest manifest records the SHA-256 of each at
+its pinned location. If they are absent, the stage raises naming the file rather than
+producing an empty result. The gridded outputs are committed under `data/processed/`, so the
+repository still reads without them.
 
 ## Repository layout
 
@@ -71,8 +78,11 @@ UFEM_2.0/
     config.py               Pydantic models, the feature contract, config hashing
     manifest.py             content addressed artifact store
     runner.py               ufem run <stage>|all and ufem doctor, pure batch
+    ingest.py               raw CSVs to deduplicated, typed Parquet
+    grid.py                 both signals on the common displacement grid, plus the scalar QoIs
   data/
     audit_reference/        committed golden values from the pre build audit, P1 gates on these
+    processed/              the small pipeline outputs, committed for self containment
     quarantine/             what is deliberately not used, and why
   legacy_salvage/           read only inputs carried over from v1, never edited in place
   v1_legacy/                the frozen v1 pipeline, release v1.0.0, read only
