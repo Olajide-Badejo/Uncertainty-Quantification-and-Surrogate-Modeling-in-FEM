@@ -154,3 +154,25 @@ files. The spec estimates P1 at 1 to 2 sessions; it took one.
 surrogate that predicts curves on that grid, plus the warning written into
 `DESIGN_DECISIONS.md` that its peak load is not the audit's 38.15 kN and must never be quoted
 as though it were. The audit stage will want `raw_curve_qoi` for its own headline table.
+
+## 2026-08-30, CI proof of failure gate (spec 18.1) executed
+
+Build spec 18.1 says a CI that has never been red protects nothing, so before P2 wrote any
+real code I planted each of the four faults the gate exists to catch, one at a time, pushed,
+and recorded the run. Each fault was reverted before the next was planted, and the fifth run
+proves the tree is green again with no fault left behind.
+
+| Run | Planted fault | Gate that caught it | Outcome |
+|---|---|---|---|
+| [33279017399](https://github.com/Olajide-Badejo/Uncertainty-Quantification-and-Surrogate-Modeling-in-FEM/actions/runs/33279017399) | banned identifier in `src/` | `scripts/dash_lint.py`, ground rule 4 | red |
+| [33279026622](https://github.com/Olajide-Badejo/Uncertainty-Quantification-and-Surrogate-Modeling-in-FEM/actions/runs/33279026622) | distribution literal outside `config.py` | `scripts/dash_lint.py`, binding law 2 | red |
+| [33279028700](https://github.com/Olajide-Badejo/Uncertainty-Quantification-and-Surrogate-Modeling-in-FEM/actions/runs/33279028700) | broken import | pytest collection | red |
+| [33279030135](https://github.com/Olajide-Badejo/Uncertainty-Quantification-and-Surrogate-Modeling-in-FEM/actions/runs/33279030135) | em dash in a tracked text file | `scripts/dash_lint.py`, ground rule 3 | red |
+| [33279031419](https://github.com/Olajide-Badejo/Uncertainty-Quantification-and-Surrogate-Modeling-in-FEM/actions/runs/33279031419) | none, all four reverted | every gate | green |
+
+The four faults are the four the spec names, and each one failed the specific job it was
+supposed to fail rather than failing the build for some unrelated reason: the three lint
+faults stopped the `lint` job and left the test jobs untouched, and the broken import stopped
+collection in both `test-fast` matrix legs. That distinction is the whole value of the
+exercise. A gate that goes red for the wrong reason is a gate that will go green for the
+wrong reason too.
