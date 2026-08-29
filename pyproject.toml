@@ -63,4 +63,4 @@ select = ["E", "F", "W", "I", "E722"]
 [tool.ruff.lint.isort]
 # The lint scripts live in scripts/ rather than in the package, but the tests import them
 # directly, so isort must not file them under third party.
-known-first-party = ["ufem", "dash_lint", "check_file_sizes"]
+known-first-party = ["ufem", "dash_lint", "check_file_sizes", "export_processed"]
