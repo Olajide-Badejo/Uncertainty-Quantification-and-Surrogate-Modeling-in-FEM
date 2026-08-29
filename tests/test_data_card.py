@@ -80,6 +80,27 @@ def test_every_report_macro_name_is_unique(regenerated):
     assert len(names) > 40
 
 
+@pytest.mark.parametrize("relative", GENERATED)
+def test_no_generated_file_records_a_wall_time(regenerated, relative):
+    """A generated document must not embed a quantity that changes between runs.
+
+    This is a real defect that shipped and was caught: the data card's provenance table
+    listed each stage's wall time, read from its manifest. Wall time varies between runs on
+    the same machine, so rerunning a stage made the byte comparison above fail even though
+    no measurement had changed. A staleness gate that fires on scheduling noise is a gate
+    that gets muted, which would then have hidden the drift it exists to catch.
+
+    Wall times still live in every manifest and in the engineering log. They are simply not
+    allowed into a file whose whole purpose is to be reproducible byte for byte.
+    """
+    text = regenerated[relative].lower()
+    for phrase in ("wall time", "wall_time", "elapsed", "seconds to run"):
+        assert phrase not in text or "deliberately absent" in text, (
+            f"{relative} embeds {phrase!r}, which varies between runs and would make the "
+            "staleness gate fire on noise."
+        )
+
+
 def test_the_card_carries_no_placeholder_or_unformatted_value(regenerated):
     """A placeholder or a leaked Python repr in the card would be a fabricated number.
 

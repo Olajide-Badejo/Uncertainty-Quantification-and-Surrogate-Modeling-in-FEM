@@ -126,10 +126,21 @@ The shifts are modest, which is itself the finding, and it is the finding that l
 
 ## 7. Provenance
 
-| Stage | Wall time [s] | Outputs |
+Wall times are deliberately absent from this table. They vary between runs on the same machine and between machines, so including them in a document that a test compares byte for byte would make the staleness gate fire on scheduling noise instead of on numbers. They are recorded per run in each stage manifest and discussed in `docs/ENGINEERING_LOG.md`.
+
+| Stage | Outputs | Output SHA-256 (first 12) |
 |---|---|---|
-| ingest | 3.27 | damage_evolution.parquet, design.parquet, load_displacement.parquet |
-| grid | 0.20 | damage_grid.parquet, qoi.parquet, rf2_grid.parquet |
-| audit | 9.50 | censoring_statistics.json, completion_model.json, completion_model.pkl, importance_weighting.json, sample_validity.parquet, validity_domain.json |
+| ingest | damage_evolution.parquet | `66c6927c4aa7` |
+| ingest | design.parquet | `b6e349c1fd66` |
+| ingest | load_displacement.parquet | `e7f9cddd7577` |
+| grid | damage_grid.parquet | `f596e20878c9` |
+| grid | qoi.parquet | `adb79f0cc4cf` |
+| grid | rf2_grid.parquet | `fc0a0d290204` |
+| audit | censoring_statistics.json | `e0ac86857241` |
+| audit | completion_model.json | `0922963a2467` |
+| audit | completion_model.pkl | `e5ead69f3db4` |
+| audit | importance_weighting.json | `d590d2c11c64` |
+| audit | sample_validity.parquet | `68c64422c36a` |
+| audit | validity_domain.json | `65e493b09826` |
 
 Each stage directory carries a `manifest.json` recording the config hash, the input artifact hashes, the output hashes, the seed entropy, the resolved package versions, and the git commit. A number in this card that cannot be traced back through one of those is a defect.

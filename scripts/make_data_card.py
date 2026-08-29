@@ -769,7 +769,15 @@ def build_data_card(data: dict[str, Any], config: Config) -> str:
 
     add("## 7. Provenance")
     add("")
-    add("| Stage | Wall time [s] | Outputs |")
+    add(
+        "Wall times are deliberately absent from this table. They vary between runs on the "
+        "same machine and between machines, so including them in a document that a test "
+        "compares byte for byte would make the staleness gate fire on scheduling noise "
+        "instead of on numbers. They are recorded per run in each stage manifest and "
+        "discussed in `docs/ENGINEERING_LOG.md`."
+    )
+    add("")
+    add("| Stage | Outputs | Output SHA-256 (first 12) |")
     add("|---|---|---|")
     for label, key in (
         ("ingest", "ingest_manifest"),
@@ -777,8 +785,8 @@ def build_data_card(data: dict[str, Any], config: Config) -> str:
         ("audit", "audit_manifest"),
     ):
         manifest = data[key]
-        names = ", ".join(sorted(record["name"] for record in manifest["outputs"]))
-        add(f"| {label} | {_fmt(float(manifest['wall_time_s']), 2)} | {names} |")
+        for record in sorted(manifest["outputs"], key=lambda item: item["name"]):
+            add(f"| {label} | {record['name']} | `{record['sha256'][:12]}` |")
     add("")
     add(
         "Each stage directory carries a `manifest.json` recording the config hash, the input "
