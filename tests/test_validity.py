@@ -38,6 +38,17 @@ CENSORED_CORNER = [35.0, 27.0, 213.0]
 
 @pytest.fixture(scope="module")
 def domain(repo_root):
+    """The real fitted domain, or a skip naming why it is unavailable.
+
+    Every test in :class:`TestTheContract` must depend on this fixture, including the ones
+    that go on to call :func:`in_validity_domain` rather than touching the returned object.
+    The artifact store is gitignored, so on a clean checkout (CI, or a fresh clone) the audit
+    stage has not run and there is nothing to assert against. A test that called
+    ``in_validity_domain`` without taking this fixture bypassed the skip and turned a missing
+    artifact into six red tests, which is what happened on the P2 merge: the absence of an
+    artifact is not the same thing as a broken contract, and only one of the two should be
+    able to fail this suite.
+    """
     try:
         return load_validity_domain(repo_root)
     except ValidityDomainUnavailable as err:
@@ -46,10 +57,10 @@ def domain(repo_root):
 
 @pytest.mark.fullstack
 class TestTheContract:
-    def test_a_point_deep_inside_the_surviving_region_is_inside(self, repo_root):
+    def test_a_point_deep_inside_the_surviving_region_is_inside(self, repo_root, domain):
         assert bool(in_validity_domain(np.array([INSIDE_POINT]), repo_root)[0])
 
-    def test_the_censored_corner_is_outside(self, repo_root):
+    def test_the_censored_corner_is_outside(self, repo_root, domain):
         """Low top cover and high strength: the corner binding law 4 exists to exclude."""
         assert not bool(in_validity_domain(np.array([CENSORED_CORNER]), repo_root)[0])
 
@@ -66,25 +77,25 @@ class TestTheContract:
         assert bool(domain.inside_design_box(corner)[0])
         assert float(domain.completion_probability(corner)[0]) < domain.threshold
 
-    def test_a_point_far_outside_the_design_is_outside(self, repo_root):
+    def test_a_point_far_outside_the_design_is_outside(self, repo_root, domain):
         """Design density: no data under a prediction means no prediction."""
         far = np.array([[100.0, 27.0, 223.0]])
         assert not bool(in_validity_domain(far, repo_root)[0])
 
-    def test_it_answers_a_batch_row_by_row(self, repo_root):
+    def test_it_answers_a_batch_row_by_row(self, repo_root, domain):
         batch = np.array([INSIDE_POINT, CENSORED_CORNER, INSIDE_POINT])
         answer = in_validity_domain(batch, repo_root)
         assert answer.shape == (3,)
         assert answer.dtype == bool
         assert list(answer) == [True, False, True]
 
-    def test_it_accepts_a_frame_through_the_feature_contract(self, repo_root):
+    def test_it_accepts_a_frame_through_the_feature_contract(self, repo_root, domain):
         import pandas as pd
 
         frame = pd.DataFrame([dict(zip(FEATURE_ORDER, INSIDE_POINT))])
         assert bool(in_validity_domain(frame, repo_root)[0])
 
-    def test_a_matrix_of_the_wrong_width_raises_naming_the_contract(self, repo_root):
+    def test_a_matrix_of_the_wrong_width_raises_naming_the_contract(self, repo_root, domain):
         with pytest.raises(ValueError, match="in that order"):
             in_validity_domain(np.zeros((2, 4)), repo_root)
 
