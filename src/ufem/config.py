@@ -159,6 +159,71 @@ class GridSettings(_Frozen):
         return self
 
 
+class CompletionModelSettings(_Frozen):
+    """The completion probability classifier of build spec 9.4.
+
+    ``primary`` is the estimator the stage tries first; ``fallback`` is the pre authorized
+    substitute of spec 9.4, taken only when the primary fails one of the guards below. The
+    guards are thresholds, not opinions, so which estimator shipped is a measured outcome
+    recorded in the stage manifest rather than a silent choice.
+    """
+
+    primary: Literal["gaussian_process"]
+    fallback: Literal["logistic"]
+    matern_nu: PositiveFloat
+    lengthscale_bounds: tuple[PositiveFloat, PositiveFloat]
+    restarts: int = Field(ge=0)
+    n_folds: int = Field(ge=2)
+    n_bootstrap: int = Field(ge=1)
+    interval_level: float = Field(gt=0.0, lt=1.0)
+    n_calibration_bins: int = Field(ge=2)
+    min_auc: float = Field(ge=0.0, le=1.0)
+    min_prediction_spread: float = Field(ge=0.0, le=1.0)
+    logistic_C: PositiveFloat
+
+    @model_validator(mode="after")
+    def _check_bounds(self) -> CompletionModelSettings:
+        low, high = self.lengthscale_bounds
+        if high <= low:
+            raise ValueError(f"lengthscale_bounds {self.lengthscale_bounds} is not increasing.")
+        return self
+
+
+class ValidityDomainSettings(_Frozen):
+    """Where the completion model says the data can be trusted (build spec 9.4)."""
+
+    completion_threshold: float = Field(gt=0.0, lt=1.0)
+    hull_expansion: float = Field(ge=0.0)
+    grid_resolution: int = Field(ge=2)
+
+
+class ImportanceWeightingSettings(_Frozen):
+    """Inverse probability of completion weights, with the clip that keeps them finite."""
+
+    min_probability: float = Field(gt=0.0, lt=1.0)
+
+
+class AuditSettings(_Frozen):
+    """Validity classification and censoring thresholds of build spec 9.4.
+
+    None of these is the 198 sample list. The classification is derived from the ingest
+    artifacts on every run; these are only the criteria it is derived by, which is the whole
+    difference between a measurement and the hard coded literal of build spec 5.5.
+    """
+
+    u_start_tolerance_mm: PositiveFloat
+    u_end_tolerance_mm: PositiveFloat
+    target_step_time: PositiveFloat
+    step_time_tolerance: float = Field(gt=0.0, lt=1.0)
+    min_points: int = Field(ge=2)
+    u_monotone_tolerance_mm: float = Field(ge=0.0)
+    n_quantile_bins: int = Field(ge=2)
+    significance_level: float = Field(gt=0.0, lt=1.0)
+    completion_model: CompletionModelSettings
+    validity_domain: ValidityDomainSettings
+    importance_weighting: ImportanceWeightingSettings
+
+
 class Normalizers(_Frozen):
     P0_N: PositiveFloat
     u0_mm: PositiveFloat
@@ -213,6 +278,7 @@ class Paths(_Frozen):
 class PipelineConfig(_Frozen):
     schema_version: int
     grid: GridSettings
+    audit: AuditSettings
     normalizers: Normalizers
     pca: PcaSettings
     kernel: KernelSettings

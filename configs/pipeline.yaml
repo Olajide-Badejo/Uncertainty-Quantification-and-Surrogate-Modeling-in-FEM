@@ -18,6 +18,71 @@ normalizers:
   P0_N: 40000.0
   u0_mm: 20.0
 
+# The audit stage of build spec 9.4. Every threshold the validity classification uses lives
+# here rather than as a literal in audit.py, and the 198 sample list is never one of them:
+# the classification is derived from the ingest artifacts on every run.
+audit:
+  # A run is valid only if its curve covers the whole common grid, so the span check uses
+  # the same [u_min_mm, u_max_mm] the grid block declares. These are tolerances on it.
+  u_start_tolerance_mm: 1.0e-6
+  u_end_tolerance_mm: 1.0e-6
+  # Abaqus step time at the end of a completed analysis, and how close is close enough.
+  target_step_time: 1.0
+  step_time_tolerance: 0.05
+  # Fewer increments than this and the curve is too coarse to carry a QoI at all.
+  min_points: 20
+  # Displacement is imposed, so |U2| must never decrease along a run. The tolerance absorbs
+  # float32 round trips in the extracted CSVs, nothing larger.
+  u_monotone_tolerance_mm: 1.0e-9
+  # The censoring statistics: how many quantiles the failure rate table splits each input
+  # into, and the significance level the report reads the tests at.
+  n_quantile_bins: 4
+  significance_level: 0.05
+  # The completion probability model of build spec 9.4.
+  completion_model:
+    # Preferred estimator. The logistic fallback is pre authorized by spec 9.4 and is taken
+    # only when the GPC fails the guards below, never silently: the choice is recorded in
+    # the manifest with the measurement that drove it.
+    primary: gaussian_process
+    fallback: logistic
+    # Matern smoothness of the GPC kernel, matching the surrogate kernel of the kernel block.
+    matern_nu: 2.5
+    # Wider at the top than the surrogate kernel's bounds on purpose. The features are
+    # standardized, so a lengthscale far above the unit scale is the kernel's way of saying
+    # an input has no effect, and the bottom cover is exactly that input (chi squared
+    # p = 0.30). The fit on the full design settles at about 20 for that dimension, well
+    # inside this bound; some cross validation folds push it further, and the stage records
+    # the fitted lengthscales in its manifest so the saturation is visible rather than
+    # inferred from a warning.
+    lengthscale_bounds: [0.05, 1000.0]
+    restarts: 4
+    # Cross validation of the completion model itself (binding law 3).
+    n_folds: 5
+    # Bootstrap interval on the cross validated ROC AUC.
+    n_bootstrap: 1000
+    interval_level: 0.90
+    # Bins of the reliability (calibration) table.
+    n_calibration_bins: 10
+    # A GPC whose cross validated AUC falls below this, or whose predictions collapse to a
+    # constant, is rejected in favor of the logistic fallback.
+    min_auc: 0.55
+    min_prediction_spread: 0.01
+    # L2 penalty of the logistic fallback.
+    logistic_C: 1.0
+  # The validity domain artifact of build spec 9.4.
+  validity_domain:
+    completion_threshold: 0.5
+    # Design density: a query point is inside only if it also sits within the convex hull of
+    # the executed design, expanded by this fraction of each input's range. Outside the hull
+    # there is no data, whatever the completion model extrapolates.
+    hull_expansion: 0.0
+    # Resolution of the dense evaluation grid the artifact reports the domain volume on.
+    grid_resolution: 21
+  # Importance weighting sensitivity study: inverse completion probability weights, clipped
+  # so one very unlikely survivor cannot dominate the weighted moments.
+  importance_weighting:
+    min_probability: 0.05
+
 pca:
   variance_target: 0.99
 

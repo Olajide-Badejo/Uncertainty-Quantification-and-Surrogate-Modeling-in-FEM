@@ -29,11 +29,18 @@ from ufem.manifest import (
 )
 
 #: Stage name to (module under ufem, phase that implements it). Order is execution order.
+#:
+#: ``audit`` sits after ``grid`` rather than between ``ingest`` and ``grid``, where the P0
+#: skeleton first placed it. Its validity reclassification and censoring statistics need
+#: only the ingest artifacts, but the importance weighting study of build spec 9.4 reweights
+#: the QoI table that ``grid`` extracts, so running audit first would mean either splitting
+#: the stage in two or having it recompute the QoI schedule itself. The reordering is
+#: recorded in docs/DESIGN_DECISIONS.md.
 STAGES: "OrderedDict[str, tuple[str, str]]" = OrderedDict(
     [
         ("ingest", ("ufem.ingest", "P1")),
-        ("audit", ("ufem.audit", "P2")),
         ("grid", ("ufem.grid", "P1")),
+        ("audit", ("ufem.audit", "P2")),
         ("register", ("ufem.register", "P3")),
         ("reduce", ("ufem.reduce", "P3")),
         ("surrogate", ("ufem.surrogate", "P4")),
