@@ -20,6 +20,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+pytest.importorskip("SALib")
+pytest.importorskip("openturns")
+
 from ufem.config import config_hash, load_config
 from ufem.manifest import load_manifest, stage_dir
 from ufem.runner import run_stage
