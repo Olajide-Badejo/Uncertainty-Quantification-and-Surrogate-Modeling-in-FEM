@@ -1027,13 +1027,14 @@ to reappear as a picture, which is exactly why it does not here.
 
 **Wall times.** Propagate rerun 37.3 s, of which the eleven targets' moments and densities are
 28.9 s, the three calibrated bands over 100000 draws 2.4 s, the curve fan 2.4 s. GIF capture 24.9 s
-plus 3 s to assemble. Model card generation under 1 s. The playwright test takes 7.4 s end to end
+plus 3 s to assemble. Model card generation under 1 s. The playwright test takes 8 s end to end
 including launching the dashboard and the browser. Full test suite including the slow markers:
-**621 s**, 10 minutes 21 seconds, which is the P4 fold harness and the manufactured pipeline test
+**676 s**, 11 minutes 16 seconds, which is the P4 fold harness and the manufactured pipeline test
 as it has been since P4.
 
-**Gates.** **575 tests pass** with everything selected, up from 526 at P7. 556 pass with the slow
-markers excluded, which is the `test-full` CI job's selection, and 429 pass under
+**Gates.** **579 tests pass** with everything selected, up from 526 at P7, of which 39 are
+new in this phase: 26 on the dashboard and 13 on the model card. 560 pass with the slow
+markers excluded, which is the `test-full` CI job's selection, and 433 pass under
 `not slow and not fullstack`, which is the light stack `test-fast` job's selection on a runner
 with no torch and no artifact store. `ruff check src tests scripts`, `scripts/dash_lint.py` with
 its new third sweep, and `scripts/check_file_sizes.py` over 248 tracked files are all clean. The

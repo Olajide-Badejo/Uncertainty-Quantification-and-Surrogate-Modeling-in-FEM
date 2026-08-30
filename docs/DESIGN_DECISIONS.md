@@ -1011,10 +1011,10 @@ probability live from the cached Monte Carlo sample. Nothing was cached: the sta
 100000 draws in memory and wrote summaries.
 
 Three options. Recompute in the UI, which would have put a Monte Carlo through a Gaussian process
-behind a slider and published a number no manifest covers. Persist all 100000 rows, which is 29 MB
-of Parquet for a panel. Or persist the seeded subsample the stage already draws for its epistemic
-layer, which is 20000 rows and 5.8 MB, exactly the rows the epistemic numbers were computed on,
-and requires no new randomness at all.
+behind a slider and published a number no manifest covers. Persist all 100000 rows, which at
+the measured compression is about 29 MB of Parquet for a panel. Or persist the seeded
+subsample the stage already draws for its epistemic layer, which is 20000 rows and 5.75 MB,
+exactly the rows the epistemic numbers were computed on, and requires no new randomness at all.
 
 The third was taken. `mc_subsample.parquet` carries the three inputs, the validity domain flag,
 the mean prediction and calibrated sigma of all eleven propagated targets, and the jackknife+ band
