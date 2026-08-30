@@ -39,6 +39,7 @@ GENERATED = (
     f"{TABLES_DIR}/reliability.tex",
     f"{TABLES_DIR}/propagated_quantiles.tex",
     f"{TABLES_DIR}/analytic_cross_check.tex",
+    f"{TABLES_DIR}/ablations.tex",
 )
 
 

@@ -33,6 +33,12 @@ from typing import Any
 
 import pandas as pd
 
+from ufem.ablation_table import (
+    AblationMissing,
+    build_ablation_macros,
+    build_ablations_table,
+)
+from ufem.ablation_table import load_payloads as load_ablation_payloads
 from ufem.audit import (
     CENSORING_JSON,
     COMPLETION_JSON,
@@ -148,6 +154,19 @@ def _read_parquet(path: Path, role: str) -> pd.DataFrame:
     return pd.read_parquet(path)
 
 
+def _ablation_payloads(artifact_root: Path, digest: str) -> dict[int, dict[str, Any]]:
+    """The five ablation artifacts of build spec 10.6, as one missing stage diagnostic.
+
+    ``ufem.ablation_table`` raises its own named error for the first ablation that has not
+    run; it is translated here so this script has exactly one way of saying that an artifact
+    is absent, which is what the staleness gate's skip condition keys on.
+    """
+    try:
+        return load_ablation_payloads(artifact_root, digest)
+    except AblationMissing as err:
+        raise ArtifactMissing(str(err)) from err
+
+
 def collect(root: Path, config: Config) -> dict[str, Any]:
     """Every artifact the card and the fragments are built from, loaded once."""
     digest = config_hash(config)
@@ -209,6 +228,7 @@ def collect(root: Path, config: Config) -> dict[str, Any]:
             reduce_dir / RECONSTRUCTION_JSON, "reconstruction error percentiles"
         ),
         "ablation_1": _read_json(ablation_path, "registration ablation"),
+        "ablations": _ablation_payloads(artifact_root, digest),
         "surrogate": _read_json(surrogate_dir / SURROGATE_JSON, "surrogate record"),
         "baselines": _read_json(validate_dir / BASELINES_JSON, "baselines and validation result"),
         "calibration": _read_json(calibrate_dir / CALIBRATION_JSON, "calibration result"),
@@ -474,6 +494,12 @@ def build_macro_fragment(data: dict[str, Any], config: Config) -> str:
         2,
     ))
     add("AblationRank", str(int(ablation["rank_for_peak_comparison"])))
+
+    # Phase P9: ablations 2 through 5. Their macro names and their verdict logic live in
+    # ufem.ablation_table beside the thresholds the predictions committed, so this file
+    # neither chooses a name nor decides whether a prediction held.
+    for macro_name, macro_body in build_ablation_macros(data["ablations"]).items():
+        add(macro_name, macro_body)
 
     # Phase P4: the Gaussian process surrogate and the fold honest baseline comparison.
     surrogate = data["surrogate"]
@@ -1430,6 +1456,7 @@ def generate(root: Path) -> dict[str, str]:
         f"{TABLES_DIR}/reliability.tex": build_reliability_fragment(data["propagation"]),
         f"{TABLES_DIR}/propagated_quantiles.tex": build_quantile_fragment(data["propagation"]),
         f"{TABLES_DIR}/analytic_cross_check.tex": build_analytic_fragment(data["propagation"]),
+        f"{TABLES_DIR}/ablations.tex": build_ablations_table(data["ablations"]),
     }
 
 
