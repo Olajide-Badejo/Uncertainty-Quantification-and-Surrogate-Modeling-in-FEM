@@ -247,6 +247,79 @@ nonlinear encoder to find, and a nonlinear encoder with nothing to find is a non
 with extra parameters. If it wins here, the monotone decoder is the reason, and that would be a
 result worth carrying into Track B rather than a defeat for the pipeline.
 
+## Ablation 3: five member deep ensemble, direct curve regression
+
+**Build spec 10.6.3. Prediction committed 2026-08-31, before
+`scripts/ablation_3_deep_ensemble.py` existed.**
+
+### What is being compared
+
+Five seeded multilayer perceptrons, each mapping the three standardized inputs straight to the
+201 point load displacement curve, against the production pipeline on the same ten grouped
+folds. Every member has its own seed for both its initialization and its minibatch order, and
+every member carries a Gaussian negative log likelihood head, so it predicts a variance per
+station as well as a mean. The ensemble prediction is the mixture: the mean of the member
+means, and the total variance is the mean of the member variances plus the variance of the
+member means, which is the decomposition that makes a deep ensemble a predictive distribution
+rather than five point predictions with a spread.
+
+The comparison is against the production surrogate's own out of fold predictive distribution,
+recomputed in the same folds from the same code path the shipped model uses, so both sides
+carry a mean and a pointwise variance and the same four metrics can be read off each. All four
+metrics are out of fold: pointwise root mean square error in newtons, Gaussian negative log
+predictive density per station in nats, empirical pointwise 90 percent coverage, and the per
+curve relative L2 the rest of this project reports.
+
+### The mechanism I expect to see
+
+Two reasons to expect the ensemble to lose, and they are different in kind. The first is the
+sample size. A network that outputs 201 numbers has at least a few hundred parameters in its
+last layer alone, and 178 training curves in a fold is not a training set for that, so its
+error will be dominated by variance rather than by bias. The five member average suppresses
+some of that, which is exactly what deep ensembles are for, but averaging five overfitted
+functions gives a smoother overfitted function, not a fitted one.
+
+The second is what the variance means. A Gaussian process posterior variance grows away from
+the training design because the kernel says so, which is a statement about where the data is.
+A deep ensemble's variance is the disagreement between five optimization runs, which is a
+statement about the loss surface. Those coincide only by luck, and the published behaviour is
+that ensembles are overconfident in the extrapolation regions where a reliability analysis
+spends its time. The softening branch of this family is where the spread is widest, and it is
+also where I expect the ensemble's variance to be least honest.
+
+### Predicted outcome, stated so it can fail
+
+1. **Pointwise RMSE.** The ensemble's out of fold pointwise RMSE in newtons is **higher** than
+   the production surrogate's on the same folds. Direction: ablation worse.
+2. **Negative log predictive density.** The ensemble's mean NLPD per station is **higher**
+   (worse) than the production surrogate's. Direction: ablation worse.
+3. **Coverage.** The ensemble's empirical pointwise 90 percent coverage is **below 0.90**, and
+   **further below nominal** than the production surrogate's uncalibrated pointwise coverage on
+   the same folds. Overconfidence, not a nominal miss in either direction: I am predicting the
+   sign.
+4. **Curve relative L2.** The ensemble's median per curve relative L2 is **higher** than the
+   production pipeline's measured 23.09 percent.
+
+### How I could be wrong
+
+Prediction 4 is the weak one, for the reason ablation 2 already records: the P4 table has the
+linear, quadratic chaos and nearest neighbour baselines all beating the production pipeline at
+curve level, so a model that predicts the curve directly starts with an advantage the
+reconstruction path gives away. If the ensemble also lands under 23.1 percent then three
+independent direct curve models have now beaten the reconstruction, and the finding is about
+the reconstruction rather than about the ensemble.
+
+Prediction 3 could fail in the direction of over coverage rather than under. With five members
+trained to convergence on 178 points, the member disagreement can be large, and a Gaussian
+negative log likelihood head fitted on a small sample often learns a generous variance because
+that is the cheapest way to reduce the loss on the points it cannot fit. If the coverage comes
+out above 0.90 the model is not thereby well calibrated, it is differently miscalibrated, and
+the NLPD is the number that will say which.
+
+Prediction 2 is the one I would defend hardest. NLPD punishes a confident mistake quadratically
+through the exponent and rewards an honest wide interval only logarithmically, so it is the
+metric on which a model whose variance does not know where the data is loses most clearly.
+
 ## Phase P6 prediction: what the functional sensitivity indices should look like
 
 **Build spec 12.3. Prediction committed 2026-08-30, before `src/ufem/sensitivity.py` existed
