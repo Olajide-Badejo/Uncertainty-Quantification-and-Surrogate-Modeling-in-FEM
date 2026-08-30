@@ -37,6 +37,15 @@ dev = [
     "hypothesis==6.165.10",
     "pytest-regressions==2.11.0",
     "ruff==0.16.5",
+    # The README GIF of build spec 15.1 and the browser half of the UFEM Lab latency test.
+    # Installing the package does not install a browser: `python -m playwright install
+    # chromium` does, and everything that needs one skips with a named reason when it is
+    # absent, so neither CI job has to acquire one.
+    "playwright==1.62.0",
+    # scripts/capture_ui_gif.py imports Pillow directly to assemble the GIF. It arrives with
+    # matplotlib anyway, and a direct import that relies on somebody else's dependency is how
+    # a build breaks when that somebody drops it.
+    "Pillow==12.3.0",
 ]
 
 [project.scripts]
