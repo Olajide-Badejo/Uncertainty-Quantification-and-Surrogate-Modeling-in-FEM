@@ -252,6 +252,107 @@ The third prediction was wrong. I expected the second principal component of the
 \label{fig:scree}
 \end{figure}
 
+\section{Gaussian process surrogate and fold honest validation}
+\label{sec:surrogate}
+The reduction of Section~\ref{sec:registration} turns each of the \NValid{} curves into a
+handful of scores; this phase learns the map from the three independent inputs to those
+scores, and reports whether that map is worth having by measuring it against dumb baselines
+in the same harness, never a friendlier one.
+
+\subsection{One Gaussian process per score and per scalar}
+One exact Gaussian process is fitted per retained reduction score and per scalar quantity of
+interest, GPyTorch on CPU in float64: a constant mean, a Mat\'ern 5/2 kernel with automatic
+relevance determination over the three standardized inputs, and a homoscedastic noise fitted
+under a LogNormal hyperprior rather than a hard floor, for the reason ground rule 4 exists:
+a fitted floor at the solver's numerical resolution reproduced the interpolate the scatter
+failure of the predecessor project on 36 of 45 targets, so the prior is centered instead on
+the share of a standardized target's variance the three inputs are not expected to explain,
+and the fit then moves off that center by up to a factor of 25. \NSurrogateTargets{} targets
+in total: \SurrogateComponentsAmplitude{} registered amplitude scores,
+\SurrogateComponentsDamage{} damage scores, plus the eight scalar quantities of interest and
+three landmarks, each with its own process. Every fit is a multi start optimization from
+\NGPRestarts{} seeded initializations, best marginal likelihood wins, and every restart is
+logged rather than only the winner.
+
+Two reduction blocks are capped rather than fitted to the reduce stage's own 99 percent
+target. The phase block reaches 99 percent at \PhaseComponentsNeeded{} components, which is
+not a ratio 198 samples support for independent processes, so only
+\SurrogateComponentsPhase{} are fitted, carrying \PhaseVarianceCarried\,\% of the phase
+block's variance; the rest is carried forward as reconstruction residual variance rather than
+being predicted. A fourth reduction block, the displacement coordinate along the arc length
+stations, is added at this phase: the registration of Section~\ref{sec:registration}
+reparameterizes every curve by arc length, so the registered amplitude alone is force against
+a parameter, not force against displacement, and recovering the physical curve needs the
+displacement half as well. It is monotone, so it is represented the same way the phase warps
+are, through the square root slope tangent space, and is capped for the same reason:
+\SurrogateComponentsDisplacement{} of the \DisplacementComponentsNeeded{} components a
+99 percent target would need, carrying \DisplacementVarianceCarried\,\% of that block's
+variance. Both caps are measured costs recorded in the surrogate's manifest, not assumptions.
+
+Scalar quantities of interest are always predicted by their own process and never read off the
+reconstructed curve, which build spec 10.4 reserves as a consistency diagnostic; the two
+differ by construction, because the curve is a truncated reconstruction while the scalar
+process is fitted on the exact measurement. The reconstructed curve's own median relative
+$L_2$ error against the training family is \SurrogateForceReconMedian\,\%, and this is the in
+sample floor the fold honest numbers below are compared against.
+
+\subsection{The baseline gate}
+\label{sec:baselines}
+Build spec 10.5 requires the surrogate to beat four baselines that share nothing with it, in
+the same cross validation harness, or to report the loss rather than the tuned improvement:
+the training mean curve, ordinary least squares on the three standardized inputs, the full
+quadratic polynomial chaos expansion, and a three nearest neighbour inverse distance average.
+None of the four has a hyperparameter fitted on this data. Scalars are compared by closed form
+leave one out over all \NValid{} runs (Dubrule 1983; Rasmussen and Williams
+section~5.4.2), which reuses the hyperparameters fitted on all runs and states that
+approximation rather than hiding it; curves are compared by \ValidationFolds{} grouped folds,
+because a curve level leave one out would refit the registration and every principal
+component basis 198 times, an arithmetic cost of about 42 minutes this project chose not to
+pay for a cross check the grouped folds already answer honestly (both the registration
+reference and every basis are refitted inside each fold, which is the fold honesty build spec
+16.3 requires).
+
+Table~\ref{tab:baselines} is the result. The gate of build spec 10.5 is decided on the four
+headline quantities of interest declared in configuration, and it has \ValidationGatePassed{}:
+the Gaussian process reaches the best out of sample $R^2$ of every model on peak load (\RSqPMaxGP{} against \RSqPMaxLinear{} for the best baseline, linear regression),
+displacement at peak (\RSqUPeakGP{} against \RSqUPeakLinear{}), initial stiffness
+(\RSqKZeroGP{} against \RSqKZeroLinear{}), and absorbed energy (\RSqEAbsGP{} against
+\RSqEAbsLinear{}). Figure~\ref{fig:pmaxvalidation} shows the peak load predictions this table
+summarizes, out of sample, against the two baselines closest to the surrogate.
+
+\begin{table}[tbp]
+\centering
+\caption{Out of sample $R^2$ on the four headline quantities of interest, leave one out, and
+the median relative $L_2$ curve error over \ValidationFolds{} grouped folds. Every model goes
+through the one harness of build spec 16.3.}
+\label{tab:baselines}
+\footnotesize
+\input{tables/baselines_table.tex}
+\end{table}
+
+\begin{figure}[tbp]
+\centering
+\includegraphics[width=\linewidth]{fig_pmax_predicted_vs_actual.pdf}
+\caption{Peak load, predicted against measured, out of sample. Each panel is the same
+\NValid{} leave one out predictions for one model; a tighter scatter around the diagonal is a
+better out of sample fit. The Gaussian process reaches the highest $R^2$ of the three shown.}
+\label{fig:pmaxvalidation}
+\end{figure}
+
+The honest caveat sits in the table's last column. At the level of the whole reconstructed
+curve rather than the four scalar headlines, the surrogate's median relative $L_2$ error
+(\CurveLTwoGP\,\%) is not the best in the table: the linear (\CurveLTwoLinear\,\%), quadratic
+chaos (\CurveLTwoQuad\,\%) and nearest neighbour (\CurveLTwoNN\,\%) baselines all reconstruct
+the curve slightly more accurately out of sample, though all four comfortably beat the
+training mean (\CurveLTwoClimatology\,\%). The reduced representation asks the Gaussian
+process to predict \SurrogateComponentsPhase{} phase and \SurrogateComponentsDisplacement{}
+displacement scores it does not need for a single scalar quantity of interest, and errors in
+those compound through the reconstruction in a way a direct curve average does not pay for.
+The scalar gate is what build spec 10.5 decides shipping on, and it passes; the curve level
+number is reported here rather than left for a reader to notice its absence, because binding
+law 3 is exactly the discipline of reporting the number that would argue against the model
+being shipped.
+
 \section{Conclusion}
 The campaign delivered \NValid{} fully converged, softening resolved load displacement and damage histories over a three dimensional input space, with clean, information rich response statistics. It also delivered two hard lessons that the successor pipeline is built around. Half the design was lost to a biased, undiagnosed failure mode, and the response to that is neither to ignore it nor to discard the data, but to model it: a calibrated completion probability model, a validity domain derived from it that every downstream stage must consult, and a weighting study that bounds the residual bias at a few percent of the mean. And two of the nominal outputs, the fourth input and the terminal damage, carry no independent information at all, which the predecessor project propagated anyway.
 

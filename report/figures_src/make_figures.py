@@ -78,6 +78,7 @@ from ufem.plotting.style import (  # noqa: E402
     apply_style,
     save_figure,
 )
+from ufem.plotting.surrogate import predicted_vs_actual  # noqa: E402
 from ufem.reduce import BASIS_JSON, fit_basis  # noqa: E402
 from ufem.reduce import STAGE_NAME as REDUCE_STAGE  # noqa: E402
 from ufem.register import (  # noqa: E402
@@ -87,6 +88,8 @@ from ufem.register import (  # noqa: E402
     curve_matrix,
 )
 from ufem.register import STAGE_NAME as REGISTER_STAGE  # noqa: E402
+from ufem.validate import BASELINES_JSON, SCALAR_PREDICTIONS_PARQUET  # noqa: E402
+from ufem.validate import STAGE_NAME as VALIDATE_STAGE  # noqa: E402
 
 OUT = REPO_ROOT / "report" / "figures"
 ANNOT = annotation_style()
@@ -518,6 +521,55 @@ def main() -> int:
         ),
         OUT / "fig_amplitude_loadings.pdf",
     )
+
+    # ------------------------------------------------------------------
+    # Phase P4: the Gaussian process surrogate and the fold honest baseline comparison. The
+    # scalar predictions are the validate stage's own leave one out output, read back rather
+    # than recomputed, because a figure is not where a number gets a second, unaudited chance
+    # to be measured.
+    validate_dir = _stage(VALIDATE_STAGE, digest)
+    baselines = json.loads((validate_dir / BASELINES_JSON).read_text(encoding="utf-8"))
+    predictions_frame = pd.read_parquet(validate_dir / SCALAR_PREDICTIONS_PARQUET)
+    scalar_lookup = {
+        (str(row["target"]), str(row["model"])): row
+        for row in baselines["scalar"]
+        if row["harness"] == "leave_one_out"
+    }
+
+    print("fig_pmax_predicted_vs_actual.pdf")
+    target = "P_max_N"
+    target_rows = predictions_frame.loc[predictions_frame["target"] == target]
+    truth_by_model = {
+        model: group.sort_index()["truth"].to_numpy(dtype=float)
+        for model, group in target_rows.groupby("model")
+    }
+    # Every model's rows describe the same 198 leave one out folds in the same job order, so
+    # the truth column is identical across models; this is the assertion that it actually is.
+    truths = next(iter(truth_by_model.values()))
+    for other in truth_by_model.values():
+        if not np.array_equal(other, truths):
+            raise AssertionError(
+                "the leave one out truth column differs between models for "
+                f"{target!r}, so the scalar prediction table is not aligned by row."
+            )
+    predictions_by_model = {
+        model: group.sort_index()["prediction"].to_numpy(dtype=float)
+        for model, group in target_rows.groupby("model")
+    }
+    r2_by_model = {
+        model: float(scalar_lookup[(target, model)]["r2_test"])
+        for model in predictions_by_model
+    }
+    save_figure(
+        predicted_vs_actual(
+            truths, predictions_by_model, r2_by_model, 1.0 / 1000.0, "$P_{max}$ [kN]"
+        ),
+        OUT / "fig_pmax_predicted_vs_actual.pdf",
+    )
+    RESULTS["pmax_validation"] = {
+        "r2_test": r2_by_model,
+        "n_folds": int(baselines["context"]["n_folds"]),
+    }
 
     RESULTS["config_sha256"] = digest
     (Path(__file__).resolve().parent / "figure_stats.json").write_text(

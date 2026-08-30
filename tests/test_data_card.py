@@ -30,6 +30,7 @@ GENERATED = (
     f"{TABLES_DIR}/calibration.tex",
     f"{TABLES_DIR}/importance_weighting.tex",
     f"{TABLES_DIR}/reduction_summary.tex",
+    f"{TABLES_DIR}/baselines_table.tex",
 )
 
 
