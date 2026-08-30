@@ -162,3 +162,44 @@ def test_the_committed_card_is_referenced_by_the_documentation_set(repo_root):
     """Build spec 19 lists the model card. A generated file nothing points at goes stale."""
     readme = (repo_root / "README.md").read_text(encoding="utf-8")
     assert "docs/MODEL_CARD.md" in readme
+
+
+def test_the_card_embeds_no_git_commit(regenerated):
+    """A commit changes when a stage is rerun while its numbers do not, so it stays out.
+
+    This is the wall time defect of the data card in its second form: a generated document
+    must not carry a quantity that moves without a measurement moving, or its staleness gate
+    fires on noise and gets muted, and then it stops catching the drift it exists for. The
+    surrogate stage's manifest still records the commit, and the card says where to find it.
+
+    Matched as a bare 40 hex character token, which is what a git object name looks like. The
+    config hash and the artifact digests are 64 characters and are deliberately not matched.
+    """
+    found = re.search(r"\b[0-9a-f]{40}\b", regenerated[MODEL_CARD])
+    assert found is None, (
+        f"the model card carries what looks like a git commit at offset {found.start()}: "
+        f"{found.group()}. It belongs in the manifest, not in a byte gated document."
+    )
+
+
+def test_the_provenance_hashes_are_the_ones_that_move_only_when_the_model_does(
+    repo_root, regenerated
+):
+    from ufem.config import config_hash, load_config
+    from ufem.manifest import load_manifest, stage_dir
+    from ufem.surrogate import STAGE_NAME as SURROGATE_STAGE
+    from ufem.surrogate import SURROGATE_JSON
+
+    config = load_config(repo_root)
+    directory = stage_dir(
+        repo_root / config.pipeline.paths.artifact_root, SURROGATE_STAGE, config_hash(config)
+    )
+    if not (directory / "manifest.json").is_file():
+        pytest.skip("the surrogate stage has not run for this config hash")
+    manifest = load_manifest(directory)
+    digest = {record["name"]: record["sha256"] for record in manifest["outputs"]}[
+        SURROGATE_JSON
+    ]
+    text = regenerated[MODEL_CARD]
+    assert config_hash(config) in text
+    assert digest in text

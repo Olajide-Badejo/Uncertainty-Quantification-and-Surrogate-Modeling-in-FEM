@@ -1036,7 +1036,7 @@ as it has been since P4.
 markers excluded, which is the `test-full` CI job's selection, and 429 pass under
 `not slow and not fullstack`, which is the light stack `test-fast` job's selection on a runner
 with no torch and no artifact store. `ruff check src tests scripts`, `scripts/dash_lint.py` with
-its new third sweep, and `scripts/check_file_sizes.py` over 237 tracked files are all clean. The
+its new third sweep, and `scripts/check_file_sizes.py` over 248 tracked files are all clean. The
 staleness gate on `docs/DATA_CARD.md` and the 16 report fragments still passes untouched, and a
 second staleness gate now covers `docs/MODEL_CARD.md`.
 
@@ -1053,6 +1053,17 @@ reaches a job that cannot afford them.
 rather than ffmpeg for the GIF. A step driven capture rather than a real time one. No Sobol bars
 on the sensitivity panel, because there are no publishable indices. And no size exemption in
 `check_file_sizes.py`, because the file that was supposed to need one does not.
+
+**One defect shipped inside this phase's own commits and is logged.** The model card printed
+the git commit and the branch the surrogate artifact was fitted at, both read from its manifest.
+Rerunning any stage rewrites that manifest with the current commit while reproducing every
+output bitwise, so the P4 through P7 determinism tests, which do exactly that, made the byte
+gated card stale with two lines changed and no number among them. This is the data card's wall
+time defect in a second form and it was not recognized as one, because a commit feels like the
+opposite of noise. The card now carries the config hash and the digest of the surrogate record,
+which move only when the model does, and points at the manifest for the rest of the chain; a
+regression test matches a bare 40 hex character token and fails on the old card. The rule
+generalized: a byte gated document carries only quantities that change when the numbers change.
 
 **What P9 inherits.** A dashboard that reads the artifact store and a model card generated from
 it, both of which will go stale the moment an ablation changes a fitted model, and both of which

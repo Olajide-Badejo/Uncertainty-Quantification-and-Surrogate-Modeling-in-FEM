@@ -141,3 +141,39 @@ def test_stage_code_file_points_at_the_implementation():
     assert path.name == "grid.py"
     assert path.is_file()
     assert Path(path).parent.name == "ufem"
+
+
+def test_the_lab_subcommand_is_registered_with_the_address_build_spec_15_names():
+    """`ufem lab` exists, and the one place the address is decided is this parser."""
+    from ufem.runner import LAB_HOST, LAB_PORT, build_parser, cmd_lab
+
+    args = build_parser().parse_args(["lab"])
+    assert args.func is cmd_lab
+    assert args.host == LAB_HOST == "127.0.0.1"
+    assert args.port == LAB_PORT == 8080
+    assert args.no_browser is False
+
+    overridden = build_parser().parse_args(["lab", "--port", "9000", "--no-browser"])
+    assert overridden.port == 9000
+    assert overridden.no_browser is True
+
+
+def test_the_lab_subcommand_reports_a_missing_artifact_store_rather_than_serving_it(tmp_path):
+    """Ground rule 8: no degraded dashboard with three of five panels working.
+
+    The command is invoked against an empty repository root, so the store cannot be built. It
+    must print a named diagnostic and exit nonzero rather than starting a server that has
+    nothing to show.
+    """
+    pytest.importorskip("nicegui")
+    pytest.importorskip("torch")
+    import shutil
+
+    from ufem.runner import main
+
+    source = Path(__file__).resolve().parents[1] / "configs"
+    (tmp_path / "configs").mkdir()
+    for name in ("probabilistic_model.yaml", "pipeline.yaml"):
+        shutil.copy(source / name, tmp_path / "configs" / name)
+    code = main(["--repo-root", str(tmp_path), "lab"])
+    assert code == 1

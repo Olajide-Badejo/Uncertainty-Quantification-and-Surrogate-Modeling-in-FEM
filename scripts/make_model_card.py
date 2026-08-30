@@ -12,10 +12,17 @@ not run raises :class:`ArtifactMissing` naming the stage rather than leaving a g
 committed copy, so a card that has drifted from the pipeline is a failing test rather than a
 document nobody rechecked.
 
-Two things are deliberately absent, for the same reason they are absent from the data card. No
-wall time, because it varies between runs on one machine and would make the staleness gate fire
-on scheduling noise. And no generation date, because the card's provenance is the commit and
-the config hash it was generated from, both of which are in it.
+Three things are deliberately absent, all for one reason: a generated document must not carry a
+quantity that moves while the measurements it reports stay put, because a staleness gate that
+fires on that gets muted, and a muted gate stops catching the drift it exists for.
+
+- No wall time. It varies between runs on one machine, and the data card already learned this.
+- No generation date, for the same reason.
+- No git commit. Rerunning a stage rewrites its manifest with the current commit while
+  reproducing its outputs bitwise, so a commit in the card would move on every determinism
+  check. What the card carries instead is the config hash and the digest of the surrogate
+  record, which move only when the model does, plus a pointer to the manifest that holds the
+  rest of the chain.
 
 Exit 0 is clean, exit 1 names the failure.
 """
@@ -216,7 +223,6 @@ def build_model_card(data: dict[str, Any], config: Config) -> str:
     sensitivity = data["sensitivity"]
     propagation = data["propagation"]
     manifest = data["surrogate_manifest"]
-    git = manifest["git"]
 
     add("# Model card: the UFEM 2.0 calibrated functional surrogate")
     add()
@@ -232,15 +238,25 @@ def build_model_card(data: dict[str, Any], config: Config) -> str:
     # -- provenance ---------------------------------------------------------
     add("## Provenance")
     add()
+    digests = {record["name"]: record["sha256"] for record in manifest["outputs"]}
     rows = [
         ["Config SHA-256", f"`{data['config_sha256']}`"],
-        ["Fitted at commit", f"`{git['commit']}`"],
-        ["Branch at fit time", f"`{git['branch']}`"],
-        ["Working tree clean at fit time", str(not git["dirty"])],
+        ["Surrogate record digest", f"`{digests[SURROGATE_JSON]}`"],
         ["Training runs", str(int(surrogate["n_training_runs"]))],
         ["Registration", surrogate["registration"]],
     ]
     out.extend(_table(["Item", "Value"], rows))
+    add()
+    add(
+        "The commit this model was fitted at, the working tree's state at the time, and the "
+        "digest of every other artifact are in "
+        "`experiments/results/surrogate/<config hash>/manifest.json` and in the manifest of "
+        "each stage upstream of it. They are deliberately not restated here. A commit changes "
+        "every time a stage is rerun on a new branch while the numbers it produced do not, "
+        "and a staleness gate that fired on that would be a gate that gets muted, which is a "
+        "lesson the data card's provenance table already taught this project once. The two "
+        "hashes above change only when the model changes, which is the property a card wants."
+    )
     add()
     add("Resolved stack, as the surrogate stage recorded it:")
     add()
