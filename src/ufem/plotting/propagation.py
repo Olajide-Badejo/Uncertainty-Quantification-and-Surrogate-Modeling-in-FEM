@@ -37,6 +37,7 @@ def qoi_densities(
     density: Any,
     targets: list[str],
     thresholds: dict[str, float],
+    directions: dict[str, str],
     labels: dict[str, str],
     scales: dict[str, float],
     units: dict[str, str],
@@ -49,6 +50,12 @@ def qoi_densities(
     through the calibrated predictive distribution. The shaded side of the threshold is the
     failure region, so the failure probability is the area a reader can see rather than a
     number they have to take on trust.
+
+    ``directions`` is an argument rather than an inference. The first version of this figure
+    guessed which side was the failure region from where the threshold fell relative to the
+    median, and it guessed wrong on all three panels: a threshold in the lower tail of a
+    distribution is exactly where a below type limit state puts it. The limit state declaration
+    already carries the direction, so the figure takes it.
     """
     n = len(targets)
     fig, axes = plt.subplots(1, n, figsize=(FIG_WIDTH_IN, 2.7))
@@ -65,7 +72,12 @@ def qoi_densities(
         ax.plot(x, predictive, color=C_SERIES_2, lw=1.2, ls=(0, (4, 2.0)), zorder=5)
         ax.axvline(threshold, color=C_INK_2, lw=1.0, zorder=6)
         top = max(float(aleatory.max()), float(predictive.max())) * 1.28
-        failing = x <= threshold if threshold > float(np.median(x)) else x >= threshold
+        direction = directions[name]
+        if direction not in ("below", "above"):
+            raise ValueError(
+                f"a limit state direction is 'below' or 'above', got {direction!r} for {name}."
+            )
+        failing = x < threshold if direction == "below" else x > threshold
         ax.fill_between(
             x[failing],
             np.zeros(int(failing.sum())),
@@ -88,7 +100,7 @@ def qoi_densities(
             facecolor=C_MUTED,
             alpha=0.3,
             edgecolor="none",
-            label=f"failure region ({100.0 * out_of_domain_fraction:.0f}\\,\\% of the mass "
+            label=f"failure region ({100.0 * out_of_domain_fraction:.0f} % of the mass "
             "is outside the validity domain)",
         ),
     ]
@@ -134,13 +146,13 @@ def envelope_fan(
     ax.set_ylim(0.0, None)
     handles = [
         Line2D([], [], color=C_SERIES_1, lw=1.8, label="median predicted curve"),
-        Patch(facecolor=C_BAND, alpha=0.75, edgecolor="none", label="50\\,\\% envelope"),
-        Patch(facecolor=C_BAND, alpha=0.45, edgecolor="none", label="90\\,\\% envelope"),
+        Patch(facecolor=C_BAND, alpha=0.75, edgecolor="none", label="50 % envelope"),
+        Patch(facecolor=C_BAND, alpha=0.45, edgecolor="none", label="90 % envelope"),
     ]
     ax.legend(handles=handles, loc="lower left")
     ax.annotate(
         f"{n_curves} propagated draws\n"
-        f"{100.0 * out_of_domain_fraction:.0f}\\,\\% outside the validity domain",
+        f"{100.0 * out_of_domain_fraction:.0f} % outside the validity domain",
         xy=(0.985, 0.97),
         xycoords="axes fraction",
         ha="right",
@@ -208,7 +220,7 @@ def analytic_comparison(
             facecolor=C_MUTED,
             alpha=0.3,
             edgecolor="none",
-            label=f"stated model error, {100.0 * model_error:.0f}\\,\\%",
+            label=f"stated model error, {100.0 * model_error:.0f} %",
         ),
         Line2D(
             [], [], marker="|", ls="none", ms=10.0, markeredgewidth=1.6, color=C_INK_2,

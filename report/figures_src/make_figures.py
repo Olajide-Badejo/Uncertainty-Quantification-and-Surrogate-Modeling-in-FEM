@@ -796,6 +796,7 @@ def main() -> int:
             density_frame,
             limit_targets,
             thresholds,
+            {state.target: state.direction for state in LIMIT_STATES},
             {name: propagation["targets"][name]["label"] for name in limit_targets},
             {name: QOI_DISPLAY[name][1] for name in limit_targets},
             {name: QOI_DISPLAY[name][0] for name in limit_targets},
