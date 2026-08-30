@@ -927,8 +927,11 @@ def build_markdown_summary(payload: dict[str, Any]) -> str:
     add("|---|---|---|---|---|---|")
     for record in payload["limit_states"]:
         unit, scale = QOI_DISPLAY[record["target"]]
+        # A dimensionless quantity gets no unit at all here. Printing the marker after the
+        # number gives "0.5 -", which reads as an arithmetic sign rather than as an absence.
+        suffix = "" if unit == "-" else f" {unit}"
         add(
-            f"| {record['label']} | {record['threshold'] * scale:.4g} {unit} | "
+            f"| {record['label']} | {record['threshold'] * scale:.4g}{suffix} | "
             f"{format_probability(record['pf_point'], record['n_samples'])} | "
             f"{record['pf_standard_error']:.5f} | "
             f"{format_probability(record['pf_conservative'], record['n_samples'])} | "
