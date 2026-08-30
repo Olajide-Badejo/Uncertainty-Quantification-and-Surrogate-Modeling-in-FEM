@@ -250,11 +250,113 @@ out of git, so the reasoning is worth writing down.
 The fragments are small text files, they are what makes `report.yml` able to build the PDF on
 a runner with no artifact store and no Python stack, and committing them means a reader of the
 repository can see every number the report claims without running anything. The staleness gate
-in `tests/test_data_card.py` is what keeps that safe: it regenerates all six files and asserts
-byte identity, so a committed fragment that has drifted from the pipeline fails the suite
-rather than quietly misreporting. The PDF is the opposite case, a large binary that no test
-can meaningfully diff, so it stays gitignored and is published as a CI artifact instead. The
-`.gitignore` carries this reasoning as a comment next to the rule.
+in `tests/test_data_card.py` is what keeps that safe: it regenerates every one of those files
+and asserts byte identity, so a committed fragment that has drifted from the pipeline fails
+the suite rather than quietly misreporting. The PDF is the opposite case, a large binary that
+no test can meaningfully diff, so it stays gitignored and is published as a CI artifact
+instead. The `.gitignore` carries this reasoning as a comment next to the rule.
+
+Amended 2026-08-30: the figures are now committed on the same reasoning, which this entry
+originally got wrong by calling them "the opposite case" and grouping them with the PDF. They
+are small vector files (556 KB for the whole set), they are what lets `report.yml` build on a
+container with no Python stack, and the style module pins `SOURCE_DATE_EPOCH` so a regenerated
+figure is byte identical. Ignoring them while `report.yml` claimed they were committed is what
+turned the P2 merge red, and it is recorded in `docs/DEFECT_LOG.md`.
+
+## 2026-08-30, Phase P3
+
+### SRVF ships, and the pre authorized fallback is not needed
+
+Build spec 10.1 pre authorizes landmark piecewise linear registration as the fallback if SRVF
+"proves numerically fragile on these curves". It did not, so the shipped path is SRVF and the
+fallback stays unused. The evidence, all measured rather than assumed: the stage runs in 12.99
+seconds on the 198 by 201 family against a budget of minutes; every one of the 198 warps is
+monotone with both endpoint errors exactly 0.0 against a 1e-8 tolerance; and a forced rerun
+reproduces all five artifacts bitwise.
+
+The exact call is `fdasrsf.fdawarp(f, t).srsf_align(parallel=False)` with every other argument
+at the library default, which is `method='mean'`, `omethod='DP2'`, `center=True`, `MaxItr=20`,
+`lam=0.0` and `thresh=0.01`. The single departure from the defaults is `parallel=False`, and
+it is there for determinism rather than for correctness: the parallel path splits the family
+across workers, so the association order of the Karcher mean would depend on scheduling and
+the bitwise reproducibility of spec 17.2 would be gone. At 13 seconds the wall time it costs
+is not worth arguing about.
+
+Because the registration is bitwise reproducible, no tolerance gate and no downgrade to
+"statistically reproducible" is needed anywhere in this phase. If that ever changes, the brief
+and spec 17.2 both require measuring the real reproducibility and recording it here rather
+than deleting the assertion; `tests/test_p3_determinism.py` carries that instruction in its
+failure message.
+
+### The warp tangent space comes from the library, not from me
+
+Spec 10.1 says to use fdasrsf's utilities for the psi transform and the Karcher mean, and only
+to hand roll if the API lacks them. It does not lack them:
+`fdasrsf.utility_functions.SqrtMean(gam)` returns the Karcher mean psi, the mean warp, the psi
+family and the shooting vectors, and the shooting vectors are exactly the log map image the
+phase block needs. So `warp_tangent_vectors` is a thin wrapper that transposes into the
+library's orientation and back, and there is no hand written sphere geometry in this
+repository to go stale.
+
+### numpy SVD rather than scikit-learn PCA, and a pinned sign convention
+
+Spec 10.2 permits either. I took `numpy.linalg.svd(centered, full_matrices=False)` because the
+centering, the truncation rule and the sign convention are then explicit and testable rather
+than being library defaults that can move under an upgrade, and because a full deterministic
+SVD avoids the randomized solver path entirely.
+
+The sign convention is the part worth recording. An SVD determines its factors only up to a
+simultaneous sign flip of a singular vector pair, so without a convention the loadings and the
+scores can both flip between platforms or library versions while describing exactly the same
+subspace. That would break the bitwise reproducibility gate, and worse, it would silently flip
+the sign of any correlation a later stage reports against a score. Every component is
+therefore flipped so its largest magnitude entry is positive, and a test asserts it.
+
+### The 85 percent landmark is missing rather than clamped
+
+One curve of the 198 never falls to 85 percent of its peak anywhere on its descending branch.
+The landmark for that curve is NaN with a `u85_reached` flag set False, not the stroke end.
+Clamping would have been easy and would have looked fine, and it would have put a fictitious
+landmark at exactly 20 mm into the column, which is a manufactured number in the sense binding
+law 1 and ground rule 8 both forbid. Downstream consumers read the flag and decide for
+themselves.
+
+Worth recording alongside it: the naive version of this measurement, testing only whether the
+final value sits above 85 percent of the peak, gives 34 curves rather than 1. 33 of those dip
+below the level somewhere on the branch and then recover load. The landmark scans the whole
+descending branch, so it finds the real crossings, and the two counts are both in the
+`register.py` docstring so the discrepancy cannot be rediscovered as a bug later.
+
+### The knee window is 0.2 mm, and the first choice of 0.5 mm was wrong
+
+The cracking knee estimator takes the most negative smoothed second difference over
+`0.2 mm < u < 0.8 u_peak`. I first wrote the lower bound as 0.5 mm, reasoning that the first
+half millimetre is a straight elastic line whose numerical curvature is interpolation noise.
+That reasoning was right about the noise and wrong about this beam: these curves are linear to
+four significant digits for their first six grid points and break between 0.6 and 0.8 mm, so
+0.5 mm was inside the knee. The symptom was unmissable once looked at, with the curvature
+minimum landing exactly on the window edge for 135 of 198 curves, and a test now asserts that
+no landmark sits within 0.1 mm of the bound.
+
+The estimator reports the knee 0.1 to 0.2 mm late, consistently, because the second difference
+of a smoothed signal peaks just past a break in slope. A consistent sub grid bias is tolerable
+for a landmark since it shifts every curve the same way; what would not be tolerable is an
+error that wandered in sign between curves, so the test pins the consistency rather than the
+offset.
+
+### Damage curves are not registered, and the count is higher than the spec guessed
+
+Spec 10.2 expects the damage family to be very low rank raw and floats the possibility that
+two components clear 99 percent. Measured, it needs 11: the leading pair carries 85.1 percent
+and 94.4 percent arrives at four components, after which a long tail of small modes runs out
+to the target. The stage reports what it measured. The decision not to register them stands
+on its own reasoning rather than on the rank: they are monotone saturating curves that all
+terminate at the same material table cap, so there is no phase variation to separate.
+
+The phase block needing 63 components is the number most likely to matter at P4. 63 scores
+over 198 samples is not a comfortable ratio for independent GPs, and reducing the phase block
+harder than 99 percent is the obvious lever if it becomes a problem. That is a P4 decision and
+is deliberately not pre empted here.
 
 <!-- BEGIN RESOLVED VERSIONS -->
 
