@@ -148,6 +148,33 @@ conformal:
   alphas: [0.1, 0.05]
   K_posterior_draws: 256
 
+# Global sensitivity analysis, build spec section 12. The Q2 publication thresholds are
+# deliberately absent: they are the constants build spec 12.1 names and they live in
+# src/ufem/sensitivity.py beside the code that applies them, for the same reason the
+# calibration gate thresholds do. What is here is only how much computation to spend.
+sensitivity:
+  # Candidate polynomial chaos basis: total degree 5 under hyperbolic truncation q = 0.75,
+  # exactly as build spec 12.1 specifies. At three inputs that is 20 candidate terms, which
+  # LARS then selects a sparse subset of; the full degree 5 tensor basis would be 56.
+  pce_total_degree: 5
+  pce_hyperbolic_q: 0.75
+  # Conditional realizations drawn from each Gaussian process posterior for the cross check
+  # of build spec 12.2. Every realization gets its own Saltelli estimate, and the reported
+  # index is the distribution over these, never the posterior mean's single number.
+  gp_realizations: 200
+  # Scrambled Sobol design size per realization, as a power of two. Build spec 12.2 asks for
+  # 2^15; the measured wall time and the decision are in docs/DESIGN_DECISIONS.md.
+  gp_sobol_log2_samples: 15
+  # Random Fourier features in the prior path of the pathwise posterior sampler. A joint draw
+  # at 163840 design points is not a Cholesky anybody can afford, so the realizations come
+  # from the decoupled construction: an approximate prior path plus an exact canonical
+  # update. The approximation is in this number and its measured cost is in the manifest.
+  gp_fourier_features: 4096
+  # Bootstrap resamples inside each SALib Sobol analysis. These give the surrogate Monte
+  # Carlo error of one realization's indices, which is not the posterior spread and is
+  # labeled as such wherever it appears.
+  gp_bootstrap_resamples: 20
+
 mc:
   n_samples: 100000
 

@@ -297,6 +297,35 @@ class ConformalSettings(_Frozen):
         return self
 
 
+class SensitivitySettings(_Frozen):
+    """The global sensitivity stage of build spec section 12.
+
+    Only the computational settings live here. The Q2 publication thresholds of build spec
+    12.1 do not: they are the Sudret school constants the specification names, they are not
+    tunable without changing what the word published means, and putting them in a YAML file
+    would invite exactly the tuning the gate exists to prevent. They sit in
+    ``ufem.sensitivity`` beside the code that applies them, the same place and for the same
+    reason as the calibration gate thresholds of build spec 11.5.
+    """
+
+    pce_total_degree: int = Field(ge=1)
+    pce_hyperbolic_q: float = Field(gt=0.0, le=1.0)
+    gp_realizations: int = Field(ge=2)
+    gp_sobol_log2_samples: int = Field(ge=4, le=20)
+    gp_fourier_features: int = Field(ge=2)
+    gp_bootstrap_resamples: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def _check_features(self) -> SensitivitySettings:
+        if self.gp_fourier_features % 2 != 0:
+            raise ValueError(
+                f"gp_fourier_features is {self.gp_fourier_features}, which is odd. The random "
+                "Fourier feature map pairs a cosine with a sine per drawn frequency, so the "
+                "count has to be even."
+            )
+        return self
+
+
 class McSettings(_Frozen):
     n_samples: int = Field(ge=1)
 
@@ -322,6 +351,7 @@ class PipelineConfig(_Frozen):
     surrogate: SurrogateSettings
     validation: ValidationSettings
     conformal: ConformalSettings
+    sensitivity: SensitivitySettings
     mc: McSettings
     limit_states: LimitStates
     seed_entropy: int = Field(ge=0)
@@ -416,3 +446,58 @@ def input_distributions(config: Config) -> dict[str, Any]:
         else:
             out[name] = stats.norm(loc=var.mu, scale=var.sigma)
     return out
+
+
+def openturns_input_distribution(config: Config) -> Any:
+    """The same three independent inputs as an OpenTURNS joint distribution.
+
+    Build spec 12.1 fits the polynomial chaos expansion against an orthogonality measure, and
+    that measure has to be the probabilistic model rather than a convenient standard normal.
+    This function is what makes that true without a second declaration: the parameters come
+    from the same validated YAML fields :func:`input_distributions` reads, so an edit to
+    ``configs/probabilistic_model.yaml`` moves the chaos basis with it. Marginals are returned
+    in ``feature_order`` and the copula is independent, which is the reparameterization of
+    build spec 9.1 and the reason ordinary Sobol machinery is valid here at all.
+
+    OpenTURNS is imported lazily so a config load in an environment without it still works.
+    """
+    import openturns as ot
+
+    model = config.probabilistic_model
+    marginals = []
+    for name in model.feature_order:
+        var = model.variables[name]
+        if isinstance(var, LognormalVariable):
+            mu_ln, sigma_ln = var.log_params()
+            marginals.append(ot.LogNormal(mu_ln, sigma_ln, 0.0))
+        else:
+            marginals.append(ot.Normal(var.mu, var.sigma))
+    return ot.JointDistribution(marginals)
+
+
+def salib_problem(config: Config) -> dict[str, Any]:
+    """The same three inputs as a SALib problem definition, in ``feature_order``.
+
+    SALib names its lognormal parameters in log space, so the bounds entry for a lognormal
+    input is ``[mu_ln, sigma_ln]`` and its sampler applies ``exp(norm.ppf(u, mu_ln,
+    sigma_ln))``, which is the same object :func:`input_distributions` returns as a frozen
+    SciPy distribution. Returning the dictionary from here rather than assembling it in the
+    sensitivity stage is binding law 2 applied to a third library: the numbers are read once,
+    from the one validated file, and a test asserts the sampled marginals reproduce the
+    declared mean and coefficient of variation.
+    """
+    model = config.probabilistic_model
+    names: list[str] = []
+    bounds: list[list[float]] = []
+    kinds: list[str] = []
+    for name in model.feature_order:
+        var = model.variables[name]
+        names.append(name)
+        if isinstance(var, LognormalVariable):
+            mu_ln, sigma_ln = var.log_params()
+            bounds.append([mu_ln, sigma_ln])
+            kinds.append("lognorm")
+        else:
+            bounds.append([float(var.mu), float(var.sigma)])
+            kinds.append("norm")
+    return {"num_vars": len(names), "names": names, "bounds": bounds, "dists": kinds}
