@@ -353,6 +353,181 @@ number is reported here rather than left for a reader to notice its absence, bec
 law 3 is exactly the discipline of reporting the number that would argue against the model
 being shipped.
 
+\section{Calibrated uncertainty}
+\label{sec:calibration}
+A surrogate that predicts well and quantifies badly is worse than useless in a reliability
+setting, because the number it produces looks like a measurement. The predecessor project is
+the cautionary case: it floored its predicted standard deviation, multiplied every variance by
+a constant greater than one, and injected multiplicative noise, and every interval it published
+descended from those three operations. This section is built so that the same sentence cannot
+be written about this work. Exactly two operations touch a predictive distribution here, and
+both are measurements rather than choices.
+
+The first is one out of fold variance scaling factor per target, the square root of the mean
+squared standardized leave one out residual. Applying it drives the predictive variance
+adequacy, defined as $\mathrm{PVA} = \log\!\big(\tfrac{1}{n}\sum_i z_i^2\big)$ with
+$z_i = (y_i - \mu_{-i}(x_i))/\sigma_{-i}(x_i)$, to zero out of fold, which is the recalibration
+order build spec 11.3 prescribes. It is reported per target whatever it comes out at. The
+second is a conformal quantile applied on top of the recalibrated model. That is where the
+coverage guarantee comes from, and it is distribution free: it needs the runs to be
+exchangeable and nothing else, in particular nothing about the Gaussian process being right.
+The order matters only for the shape of the band, never for its validity, which is precisely
+why the correction factor can be reported honestly instead of being tuned.
+
+\subsection{Scalars: jackknife+ with sigma normalized scores}
+Each scalar quantity of interest gets nonconformity scores
+$R_i = |y_i - \mu_{-i}(x_i)| / \sigma_{-i}(x_i)$ built from the closed form leave one out, and a
+jackknife+ interval at $\alpha \in \{0.1, 0.05\}$. The interval at a query point is a quantile
+over the whole ensemble of leave one out models evaluated \emph{there}, not a residual quantile
+around one prediction, and the same block inverse identity that gives Dubrule's leave one out
+diagonal gives that ensemble from the one Cholesky already computed.
+
+Measuring the coverage of such an interval at a training point takes one more step, and
+skipping it changes the answer. The $n-1$ models that set the interval at $x_j$ were all fitted
+on $y_j$, so at $x_j$ they interpolate rather than predict, and the measured coverage comes out
+conservative for exactly the quantities whose in sample fit most exceeds their out of sample
+fit. On this campaign that read five to seven points of coverage too high on displacement at
+peak and initial stiffness. Every coverage in Table~\ref{tab:conformalscalars} is therefore
+measured by a nested leave one out: the query point is removed first, and the ensemble, the
+scores and the scaling factor are all built inside what is left, so nothing that sets the
+interval at a point has seen that point.
+
+\begin{table}[tbp]
+\centering
+\caption{Jackknife+ intervals on the four headline quantities of interest, over \NValid{} runs.
+Coverage is measured by the nested leave one out described above, with its
+\CalibrationWilsonLevel{}\,\% Wilson interval; the CV+ column is the honest cross check,
+\ValidationFolds{} folds with the kernel hyperparameters, the constant mean and the noise all
+refitted inside every fold, scored by the conformal rank rule on out of fold residuals.}
+\label{tab:conformalscalars}
+\footnotesize
+\input{tables/conformal_scalars.tex}
+\end{table}
+
+The two constructions agree to the last digit on all four quantities, which is worth stating
+plainly rather than presenting as a triumph: at this sample size the conformal rank rule returns
+the same order statistic whether the hyperparameters were refitted per fold or reused, so the
+reuse caveat that build spec 11.1 asks to be stated costs nothing measurable here. It would not
+follow at a smaller $n$, or with a kernel whose hyperparameters moved more between folds.
+
+\subsection{Curves: simultaneous sup norm bands}
+For the curve outputs the band has to hold at every abscissa at once, or a reader is invited to
+read a pointwise interval as if it were a statement about the whole response. The score is the
+worst standardized pointwise miss over the curve,
+$R_i = \sup_u |y_i(u) - \mu_{-i}(u)| / s(u)$, with the modulation $s(u)$ the Gaussian process
+posterior predictive standard deviation of the curve, truncation residual included; the
+$\lceil (n+1)(1-\alpha) \rceil$th order statistic of those scores scales the band, and coverage
+is then simultaneous by construction of the supremum. This modulated functional band on finite
+element softening curves is the second increment this project claims, and it is claimed
+modestly: the construction is that of Diquigiovanni, Fontana and Vantini, and what is new here
+is the modulation coming from a Gaussian process posterior over a registered functional
+representation rather than from a residual envelope.
+
+The band exists where the response varies. Both families have abscissae at which all \NValid{}
+runs take the same value, so a standardized residual there is $0/0$: the origin for the load
+displacement family, and \BandDamageExcluded{} of \GridPoints{} stations for the damage family,
+which are the first few tenths of a millimetre before damage initiates and everything past
+\BandDamageEnd\,mm, where every run has reached the same saturated value. Those stations carry
+no calibration information and are excluded from the supremum, leaving \BandForceStations{} and
+\BandDamageStations{} stations respectively. Nothing is floored to keep them, because a floor
+under a variance that is genuinely zero is the fabricated uncertainty this whole section exists
+to avoid, and the damage saturation showing up as a degenerate domain is a finding about the
+data rather than a numerical inconvenience.
+
+\subsection{What the recalibration measured}
+Table~\ref{tab:conformaldiagnostics} carries the paired before and after of build spec 11.4. For
+the scalars the answer is a null result, and the interesting kind: the \ScalarScalingCount{}
+scaling factors run from \ScalarScalingMin{} to \ScalarScalingMax{}, nine of them within one
+percent of unity, so the Gaussian process noise fit was already telling the truth about its own
+out of sample spread and the recalibration had almost nothing to correct. That is the outcome
+build spec 11.3 predicts for an honest noise fit, and it is evidence about the noise hyperprior
+decision of Section~\ref{sec:baselines} as much as about this stage.
+
+The curve is where the correction is real. The force curve's variance scaling factor is
+\BandForceScaling{}, from a predictive variance adequacy of \CurvePvaBefore{} before scaling:
+the propagated curve variance was too small by nearly a factor of two. The reason is structural
+rather than accidental, and the construction predicts it. The propagation is linear in the
+amplitude scores, and phase and displacement uncertainty enter the reconstruction nonlinearly,
+so they are absent from it by design. Drawing \ModulationDraws{} realizations through the full
+nonlinear reconstruction and comparing their pointwise spread against the propagated one gives a
+median ratio of \ModulationRatioMedian{}, in the same direction and of the same order. The
+conformal quantile absorbs whatever the modulation leaves out, which is exactly why the
+guarantee does not depend on the modulation being right.
+
+\begin{table}[tbp]
+\centering
+\caption{Paired diagnostics, before and after the measured out of fold variance scaling. PVA is
+the predictive variance adequacy defined above, zero when the variance is adequate. CRPS skill
+is against a leave one out climatology; NLPD is in nats and carries the target's own units
+through the density, so it compares within a row and not across rows.}
+\label{tab:conformaldiagnostics}
+\footnotesize
+\input{tables/conformal_diagnostics.tex}
+\end{table}
+
+\begin{figure}[tbp]
+\centering
+\includegraphics[width=\linewidth]{fig_coverage_sweep.pdf}
+\caption{Empirical against nominal coverage for the four headline quantities, swept over ten
+levels, with \CalibrationWilsonLevel{}\,\% Wilson intervals as vertical bars. Before scaling,
+after scaling and the conformal band lie on top of each other and on the diagonal, which is the
+scalar null result of Table~\ref{tab:conformaldiagnostics} seen from the other side.}
+\label{fig:coveragesweep}
+\end{figure}
+
+\begin{figure}[tbp]
+\centering
+\includegraphics[width=\linewidth]{fig_pit_heatmap.pdf}
+\caption{Probability integral transform of the leave one out curve predictions, binned into
+deciles at every abscissa and drawn as a density along the displacement axis, before and after
+the variance scaling. Blue is less mass than a calibrated model would put in that decile, red is
+more. The color scale is capped at the 99th percentile of the deviations, so that the near
+deterministic first station does not flatten the rest of the picture.}
+\label{fig:pitheatmap}
+\end{figure}
+
+\begin{figure}[tbp]
+\centering
+\includegraphics[width=\linewidth]{fig_conformal_band.pdf}
+\caption{Simultaneous \CalibrationLevel{}\,\% bands on three runs, chosen by their own sup norm
+score: the median run, the ninetieth percentile, and the worst run in the campaign. The dashed
+line is what the uncalibrated model offered at the same nominal level, a pointwise Gaussian
+interval that makes no simultaneous claim at all.}
+\label{fig:conformalband}
+\end{figure}
+
+\subsection{The calibration gate}
+Build spec 11.5 forbids any propagated number until three things hold, and the stage checks all
+three itself and exits nonzero if any fails. The simultaneous \CalibrationLevel{}\,\% band must
+reach a leave one out empirical coverage whose Wilson interval contains $0.90$: measured
+\BandForceCoverage{} on the load displacement curves, Wilson interval
+[\BandForceWilsonLow{}, \BandForceWilsonHigh{}], and \BandDamageCoverage{} on the damage curves
+with the same interval. The scalar jackknife+ intervals must do the same per headline quantity:
+measured \JackPMaxCoverage{} for peak load, \JackUPeakCoverage{} for displacement at peak,
+\JackKZeroCoverage{} for initial stiffness and \JackEAbsCoverage{} for absorbed energy, all with
+Wilson interval [\JackPMaxWilsonLow{}, \JackPMaxWilsonHigh{}]. Every one of these sits inside
+the exact finite sample bracket the conformal construction guarantees, which at \NValid{} runs
+is $[0.900, 0.905]$.
+
+The third criterion is the one build spec 11.5 states visually, that the PIT heatmap shows no
+gross U shape on the softening branch, and a visual criterion inside a machine checked gate is
+not a criterion. It is implemented as a statistic: the fraction of PIT values falling in the
+outer two deciles over the post peak part of every curve, which a calibrated predictive
+distribution puts at \PitOuterMassNominal{} by definition and which rises above that precisely
+when the tails fill in. The threshold is \PitOuterMassMax{}, committed before the first
+measurement was taken. Measured, the statistic falls from \PitOuterMassBefore{} before the
+variance scaling to \PitOuterMassAfter{} after it, so the uncalibrated model sat within a
+percentage point of failing this criterion, and the measured scaling is what moved it. The gate
+\CalibrationGatePassed{}.
+
+A closing caveat, because the bands in Figure~\ref{fig:conformalband} are wide and the reason is
+not the calibration. A simultaneous band over two hundred abscissae is scaled by a supremum, and
+the supremum of a standardized residual field has a long right tail; the multiplier here is
+\BandForceScale{}. Part of that width is the price of simultaneity and the rest is the curve
+level accuracy reported in Section~\ref{sec:baselines}, where the surrogate does not beat its
+baselines. The band is honest about a model that is mediocre at whole curves, which is the
+correct behavior and an argument for improving the model rather than the band.
+
 \section{Conclusion}
 The campaign delivered \NValid{} fully converged, softening resolved load displacement and damage histories over a three dimensional input space, with clean, information rich response statistics. It also delivered two hard lessons that the successor pipeline is built around. Half the design was lost to a biased, undiagnosed failure mode, and the response to that is neither to ignore it nor to discard the data, but to model it: a calibrated completion probability model, a validity domain derived from it that every downstream stage must consult, and a weighting study that bounds the residual bias at a few percent of the mean. And two of the nominal outputs, the fourth input and the terminal damage, carry no independent information at all, which the predecessor project propagated anyway.
 
