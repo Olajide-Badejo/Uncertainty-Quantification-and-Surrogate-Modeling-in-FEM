@@ -254,3 +254,47 @@ the Q2 thresholds applied per target, and the polynomial chaos and Gaussian proc
 agreeing within their uncertainties or the discrepancy diagnosed in writing. This section
 exists so that the physics claim in the report is a prediction that survived rather than a
 description written after looking at the picture.
+
+### Results, measured 2026-08-30
+
+Everything above this line was committed in `0ebc224`, before `src/ufem/sensitivity.py` existed
+in `8788ced`, and is left exactly as written.
+
+**The verdict is that this campaign cannot decide the prediction.** All 24 sparse chaos
+expansions failed the corrected leave one out Q2 gate of build spec 12.1, so every index the
+five predictions would be read from is withheld. What follows is therefore not a verdict on the
+predictions; it is a record of which way the withheld numbers ran, kept so that whoever repeats
+this on a corrected campaign can see what was expected and what a failed campaign showed.
+
+| Prediction | Predicted | Measured (withheld) | Direction |
+|---|---|---|---|
+| 1. Crossover exists, top cover leads early | crossover present, before the peak | 0 crossings over 200 usable stations; Fcm leads everywhere | against |
+| 2. Crossover below 5 mm | below 5 mm | no crossover to locate | not applicable |
+| 3. S_Fcm above 0.6 at the peak, above 0.5 in softening | yes | Fcm at 0.931 at the first usable station and never below 0.583 | with, and then some |
+| 4. Bottom cover negligible, T_cbot below 0.10 everywhere | yes | maximum 0.0012 | with |
+| 5. Interaction share below 0.15 aggregated | yes | maximum 0.006 pointwise | with |
+
+**Prediction one ran against me, on direction and on location at once.** I expected the top
+cover to govern the early response through the lever arm of the transformed section, with the
+strength taking over as the tension zone cracked. The withheld decomposition has the strength
+holding 0.931 of the amplitude variance at the earliest station the decomposition exists at,
+0.03 mm on the mean displacement coordinate, and never yielding the lead: the top cover's
+closest approach is 0.167 behind, at 13.7 mm, on the softening branch rather than before the
+peak. If that ordering survives on a corrected campaign, the reading is that the elastic branch
+of these curves is governed by the Eurocode~2 modulus, which moves with strength, more than by
+the reinforcement lever arm, which was the third way I wrote down that I could be wrong.
+
+**Predictions four and five ran with me, and neither is surprising.** The bottom cover is
+negligible everywhere by a factor of eighty against the ceiling I named, which is consistent
+with the surrogate's own automatic relevance determination pinning that input's length scale at
+the top of its allowed range. The response is close to additive, at least in the sparse
+expansion's reading of it, and that is the reading whose sparsity the Gaussian process cross
+check disputes; see the discussion of the additivity gap in the report.
+
+**What I got wrong about the exercise, rather than about the physics.** The five predictions all
+presume the indices exist as statements about the beam. None of them anticipated that the
+prior question, whether any smooth metamodel can describe this campaign well enough for a
+variance decomposition to mean anything, would come back no. The right prediction to have
+committed alongside these would have been a Q2 one, and I did not write it. That is a lesson
+about what to predict rather than a lesson about beams, and the P7 predictions will carry a
+validity threshold of their own.
