@@ -969,6 +969,25 @@ def evaluate_gate(
     }
 
 
+def enforce_gate(gate: dict[str, Any], directory: Path) -> None:
+    """Stop the stage when the gate of build spec 11.5 failed, naming what failed.
+
+    The diagnostics stay on disk so the failure can be read, but the caller writes no manifest
+    after this raises, which is the point: a failed gate must never become a cache hit, and
+    build spec 11.5 forbids any propagated number until it passes. Separate from
+    :func:`evaluate_gate` so the failure path itself is testable rather than only its verdict.
+    """
+    if gate["passed"]:
+        return
+    raise CalibrationGateFailed(
+        "the calibration gate of build spec 11.5 failed on: "
+        + "; ".join(gate["failing"])
+        + f". Diagnostics were written to {directory} and no manifest was recorded, so the "
+        "stage will rerun rather than serve this result. Build spec 11.5: the fix is model "
+        "revision, never band styling."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Generated fragments
 # ---------------------------------------------------------------------------
@@ -1335,17 +1354,7 @@ def run(repo_root: Path | str, config: Config, config_sha256: str) -> Path:
     for check in gate["checks"]:
         print(f"[calibrate]   {'pass' if check['passed'] else 'FAIL'}  {check['criterion']}: "
               f"{check['measured']:.4f}")
-    if not gate["passed"]:
-        # The artifacts stay on disk for diagnosis, but no manifest is written: a failed gate
-        # must never become a cache hit, and build spec 11.5 forbids any propagated number
-        # until it passes. The fix is model revision, never a wider band (ground rule 4).
-        raise CalibrationGateFailed(
-            "the calibration gate of build spec 11.5 failed on: "
-            + "; ".join(gate["failing"])
-            + f". Diagnostics were written to {directory} and no manifest was recorded, so the "
-            "stage will rerun rather than serve this result. Build spec 11.5: the fix is model "
-            "revision, never band styling."
-        )
+    enforce_gate(gate, directory)
 
     extra = {
         "cache_key": cache_key(STAGE_NAME, Path(__file__), config_sha256, input_hashes),

@@ -21,6 +21,7 @@ from ufem.calibrate import (
     CalibrationGateFailed,
     climatology_leave_one_out,
     crps_gaussian,
+    enforce_gate,
     evaluate_gate,
     informative_abscissae,
     jackknife_plus_intervals,
@@ -221,22 +222,24 @@ class TestTheGate:
         assert not gate["passed"]
         assert any("PIT" in name for name in gate["failing"])
 
-    def test_the_stage_raises_on_a_failing_gate_rather_than_returning(self):
+    def test_the_stage_raises_on_a_failing_gate_rather_than_returning(self, tmp_path):
         """The failure path build spec 11.5 requires: nonzero exit, named diagnostic.
 
-        Exercised on the gate evaluation the stage calls rather than on a whole synthetic
-        pipeline run, because what must be pinned is that a failing gate stops the stage: the
-        stage's own body raises ``CalibrationGateFailed`` on exactly this condition, and
-        ``ufem.runner.run_stage`` turns any stage exception into a nonzero exit.
+        ``enforce_gate`` is the production call the stage makes between writing its
+        diagnostics and writing its manifest, so this exercises the real failure path rather
+        than a copy of it. ``ufem.runner.run_stage`` turns the exception into a nonzero exit,
+        and because it is raised before ``write_manifest``, a failed calibration leaves no
+        manifest and therefore can never be served as a cache hit.
         """
         gate = evaluate_gate(*_gate_inputs(coverage=0.60, outer_mass=0.61))
-        with pytest.raises(CalibrationGateFailed, match="never band styling"):
-            if not gate["passed"]:
-                raise CalibrationGateFailed(
-                    "the calibration gate of build spec 11.5 failed on: "
-                    + "; ".join(gate["failing"])
-                    + ". Build spec 11.5: the fix is model revision, never band styling."
-                )
+        with pytest.raises(CalibrationGateFailed, match="never band styling") as raised:
+            enforce_gate(gate, tmp_path)
+        message = str(raised.value)
+        assert "simultaneous" in message and "PIT" in message
+        assert str(tmp_path) in message
+
+    def test_a_passing_gate_lets_the_stage_continue(self, tmp_path):
+        assert enforce_gate(evaluate_gate(*_gate_inputs()), tmp_path) is None
 
 
 class TestNoStylingIsPossible:
