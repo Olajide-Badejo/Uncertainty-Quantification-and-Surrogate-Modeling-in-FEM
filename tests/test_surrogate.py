@@ -233,6 +233,26 @@ def fitted(repo_root):
     return SurrogateModel.load(artifact_root, digest)
 
 
+@pytest.fixture(scope="module")
+def surrogate_manifest(repo_root):
+    """The stage's recorded manifest, or a skip when the stage has not run.
+
+    The two tests that read measurements out of the manifest rather than out of the loaded
+    model need the same guard the ``fitted`` fixture gives everything else. They did not have
+    it, so on a clean checkout, which has no artifact store, they raised instead of skipping
+    and took the full CI job red (`docs/DEFECT_LOG.md`, 2026-08-30).
+    """
+    from ufem.manifest import load_manifest
+
+    config = load_config(repo_root)
+    directory = stage_dir(
+        repo_root / config.pipeline.paths.artifact_root, SURROGATE_STAGE, config_hash(config)
+    )
+    if not (directory / "manifest.json").is_file():
+        pytest.skip(f"the surrogate stage has not run for this config hash: {directory}")
+    return load_manifest(directory)
+
+
 class TestTheFittedArtifact:
     def test_the_feature_contract_is_the_pinned_one(self, fitted):
         assert tuple(fitted.metadata["feature_order"]) == FEATURE_ORDER
@@ -312,32 +332,16 @@ class TestTheFittedArtifact:
         assert not np.array_equal(first, third)
         assert first.std(axis=1).mean() > 0.0
 
-    def test_the_fit_budget_of_build_spec_10_3_was_met(self, repo_root):
-        from ufem.manifest import load_manifest
-
-        config = load_config(repo_root)
-        directory = stage_dir(
-            repo_root / config.pipeline.paths.artifact_root,
-            SURROGATE_STAGE,
-            config_hash(config),
-        )
-        extra = load_manifest(directory)["extra"]
+    def test_the_fit_budget_of_build_spec_10_3_was_met(self, surrogate_manifest):
+        extra = surrogate_manifest["extra"]
         assert extra["fit_budget_met"], (
             f"the Gaussian process fits took {extra['gp_fit_wall_time_s']:.1f} s against the "
             f"{extra['fit_budget_s']:.0f} s budget of build spec 10.3. The spec says to stop "
             "and look rather than to widen the budget."
         )
 
-    def test_the_stage_registration_agrees_with_the_reduce_stage(self, repo_root):
-        from ufem.manifest import load_manifest
-
-        config = load_config(repo_root)
-        directory = stage_dir(
-            repo_root / config.pipeline.paths.artifact_root,
-            SURROGATE_STAGE,
-            config_hash(config),
-        )
-        agreement = load_manifest(directory)["extra"]["registration_agreement"]
+    def test_the_stage_registration_agrees_with_the_reduce_stage(self, surrogate_manifest):
+        agreement = surrogate_manifest["extra"]["registration_agreement"]
         assert agreement["loading_max_abs_deviation"] <= agreement["tolerance"]
         assert agreement["mean_max_abs_deviation_N"] <= agreement["tolerance"]
 
