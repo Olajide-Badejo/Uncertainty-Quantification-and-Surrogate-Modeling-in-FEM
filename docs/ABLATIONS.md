@@ -489,6 +489,60 @@ peak region, which would give a positive bias rather than the negative one I hav
 positive bias would be worse than a negative one for a reliability analysis that thresholds the
 peak from below, and I would say so.
 
+### Results, measured 2026-08-31
+
+Everything above this line was committed before `scripts/ablation_4_bspline.py` existed and is
+left exactly as written. One of three held, and both refutations are informative rather than
+embarrassing: one because the model did better than "competitive", and one because the
+production pipeline did worse than I assumed on a metric I was using as the yardstick.
+
+| Metric | Production | B-spline | Prediction | Verdict |
+|---|---|---|---|---|
+| Median curve relative L2 | 23.09 % | 20.53 % | within 10 % relative of production | **refuted**, 11.1 % better |
+| Peak load bias [N] | -284.6 | -3035.3 | negative and larger in magnitude | **held** |
+| Peak curvature, mean absolute error [N/mm^2] | 36876 | 25453 | blunter peak and larger error than production | **refuted** on the second half |
+
+**Pointwise: refuted by being too good.** 20.53 percent against 23.09 percent is 11.1 percent
+better in relative terms, just outside the 10 percent window I called competitive, so the claim
+as written fails. This is the flattering failure I flagged in advance, and it makes it the
+fourth direct curve model to beat the reconstruction path.
+
+Worth separating from that: the basis itself is not the limit. Projecting each held out curve
+onto its own fold's basis, which is the best the sixteen functions could do if the regression
+were perfect, gives a median relative L2 of 3.61 percent. So of the 20.53 percent, essentially
+all of it is regression error rather than representation error, and the same is true on the
+production side. No curve model in this report is limited by its basis; they are all limited by
+what three inputs and 198 runs say about a curve.
+
+**The peak: held, and this is the row that matters.** The spline reconstruction under predicts
+the peak by 3035 N, 7.7 percent of the mean peak, against 285 N or 0.5 percent for the production
+pipeline: a factor of ten. Its peak load R2 is -0.177, worse than predicting the training mean.
+This is the same mechanism ablation 1 measured on the unregistered principal component basis,
+where the bias was -228 N, and it is an order of magnitude larger here because a local basis with
+sixteen functions has to average over neighbouring shapes at exactly the station where the family
+disagrees most about where the peak is. A fixed basis cannot follow a moving peak. That is the
+argument for registration stated from the other side, and it is the strongest form of it in this
+document.
+
+**The curvature: half right, and the half that failed is about the production pipeline.** The
+predicted peak really is blunter, by a lot: a mean curvature magnitude of 6211 against 31132 for
+the truth, so the spline reconstruction is nearly flat where the real curve turns. But its mean
+absolute curvature error, 25453, is *smaller* than the production pipeline's 36876, because the
+production reconstruction overshoots the curvature in the other direction, at a mean magnitude of
+52635 against the truth's 31132. Both models get the sharpness wrong; the spline rounds it off and
+the warped reconstruction sharpens it. I wrote the claim assuming the production side was roughly
+right, and it is not, so the comparison I specified could not have been decided the way I framed
+it. The caveat I did write down, that a second difference at a moving station is noisy, applies to
+all three of these numbers and I am not promoting any of them beyond a direction.
+
+**What this ablation supports.** The B-spline model is kept as build spec 10.6.4 intends, as the
+interpretable alternative: it is the most accurate curve model here, it is readable coefficient by
+coefficient, and it is disqualified for this application by the one quantity the reliability
+analysis actually thresholds. That combination is exactly why the report reports both columns
+rather than one.
+
+**Cost.** 206 seconds on CPU, almost all of it the 160 coefficient Gaussian processes.
+
 ## Ablation 5: Sobol sequence against Latin hypercube subsampling
 
 **Build spec 10.6.5. Prediction committed 2026-08-31, before `scripts/ablation_5_design.py`
