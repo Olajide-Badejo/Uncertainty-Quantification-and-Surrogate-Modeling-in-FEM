@@ -618,6 +618,55 @@ and ten repetitions is a small sample of designs. I am reporting the repetition 
 every mean so a reader can see whether the difference clears it, and if it does not I will not
 claim the direction held.
 
+### Results, measured 2026-08-31
+
+Everything above this line was committed before `scripts/ablation_5_design.py` existed and is
+left exactly as written. Two of three held, and the one that failed did so by the effect being
+about 30 percent larger than the ceiling I named rather than by running backwards.
+
+| n | Random subsets, LOO RMSE [N] | Sobol guided, LOO RMSE [N] | Sobol advantage |
+|---|---|---|---|
+| 64 | 1929.3 +/- 135.3 | 1680.4 +/- 117.5 | +12.90 % |
+| 128 | 1836.8 +/- 69.3 | 1731.5 +/- 39.6 | +5.73 % |
+| 198 | 1821.9 | 1821.9 | 0 by construction |
+
+| Prediction | Verdict |
+|---|---|
+| Sobol guided beats random subsets at n = 64 | **held**, and the 249 N gap clears the 135 N repetition spread |
+| The advantage is under 10 percent relative | **refuted**, it is 12.90 percent |
+| The advantage shrinks by n = 128 | **held**, 5.73 percent against 12.90 percent |
+
+**Direction: held, and it clears the noise.** At 64 runs the low discrepancy selection cuts the
+leave one out root mean square error on peak load from 1929 N to 1680 N, and the 249 N gap is
+larger than either method's repetition standard deviation, which is the test I said in advance I
+would apply. In R2 terms the same comparison is 0.839 against 0.657, and the random subsets'
+repetition spread on R2 is 0.071 against the Sobol selection's 0.023: the space filling selection
+is not only better on average, it is three times more consistent, which for a campaign planner is
+the more useful half of the result.
+
+**Size: refuted, upward.** I said under 10 percent and it is 12.90. The direction of the miss
+matters: at a third of the budget the design choice buys more than I expected, which strengthens
+rather than weakens the case for choosing points deliberately in Track B. It also makes the
+censoring worry I wrote down look unfounded on this campaign: the greedy claim did not drag the
+selection into the censored corner badly enough to cost it.
+
+**Shrinkage: held.** 5.73 percent at 128, less than half the advantage at 64, and by 198 both
+methods return the whole population, so the two selections are the same set, the difference is
+exactly zero, and the script asserts that identity rather than reporting it as convergence. That
+degeneracy was written down before the run and it is why the table above says "by construction"
+in that cell instead of quoting a number to four decimals.
+
+**What this does and does not say.** It says that at a fixed small budget on this response, which
+points you keep matters by about 13 percent of the surrogate's error, and that the effect is gone
+by the time the budget is the whole campaign. It does not say what a Sobol campaign would have
+produced, because no new finite element run exists: the selection is over 198 real points, and
+those points are themselves a censored subsample of the intended Latin hypercube design. The
+Track B reading is that the enrichment budget of build spec 14.3 should be spent on a criterion
+rather than at random, which is what active learning already assumes and what this measures for
+the first time on this problem.
+
+**Cost.** 77 seconds on CPU for all 60 Gaussian process fits.
+
 ## Phase P6 prediction: what the functional sensitivity indices should look like
 
 **Build spec 12.3. Prediction committed 2026-08-30, before `src/ufem/sensitivity.py` existed
