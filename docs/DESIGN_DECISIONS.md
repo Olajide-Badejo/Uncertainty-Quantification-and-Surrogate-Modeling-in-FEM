@@ -471,6 +471,108 @@ degree at most two over three variables, which is what "full quadratic" means, a
 `tests/test_baselines.py::TestQuadraticChaos::test_the_term_count_is_the_full_quadratic
 _expansion_in_three_inputs` pins both the count and the reasoning.
 
+### The R reference cross check of build spec 11.2 is replaced by analytic constructions
+
+Build spec 11.2 asks for one validation of `conformal_functional.py` against the R package
+`conformalInference.fd` on a toy dataset. R is not installed on this machine. Installing an R
+toolchain to run one function would add a language to the dependency surface for a single
+assertion, and the resulting test could only run where that toolchain exists, so CI would skip
+it and a cross check CI does not run is a cross check that stops being true without anyone
+noticing. `tests/test_conformal_functional.py` replaces it with three things: constructions
+whose answer is computable by hand and asserted at exact equality rather than to a tolerance
+(constant curves with unit modulation reduce the sup norm score to the absolute offset, so the
+band multiplier is a named order statistic of a list written down in the test); the coverage of
+the constructed band against the exact rank probability `k / (n + 1)` that exchangeability
+implies, over 40000 replications; and a 500 replication simulation on curve valued data against
+the finite sample bracket. The comparison against a reference implementation would only have
+shown that two programs agree, which is weaker than showing that either is right. What the
+substitution gives up is stated in the test module's docstring: it does not check this
+project's indexing conventions against an independent author's reading of Diquigiovanni,
+Fontana and Vantini, so a whole literature indexing the order statistic differently would not
+be caught. That risk is why the guarantee itself is measured rather than only the arithmetic.
+
+### Predictive variance adequacy is the log of the mean squared standardized residual
+
+Build spec 11.4 names predictive variance adequacy as the one number summary and does not fix
+its form. It is implemented as `PVA = log((1/n) sum_i z_i^2)` with
+`z_i = (y_i - mu_-i(x_i)) / sigma_-i(x_i)`, natural log, zero when the variance is exactly
+adequate out of fold, positive when the model is overconfident. The log form is chosen so that
+a variance twice too large and a variance twice too small read as the same distance from
+adequate, which the raw ratio does not do. The scaling factor of build spec 11.3 is the square
+root of the same mean square, so applying it sets the adequacy to zero by construction. Because
+that makes the post scaling number uninformative on its own, the artifact also reports the
+adequacy computed with leave one out scaling factors, each measured without the point it is
+evaluated on, which is the honest out of sample version.
+
+### The functional leave one out is at the Gaussian process level inside a fixed representation
+
+The curve bands of build spec 11.2 need out of fold curve predictions for all 198 runs. The P4
+fold harness stores per fold error distributions rather than per curve predictions, and refitting
+the registration and the three principal component bases 198 times would cost the 43 minutes
+that decision record already prices. So the score processes get the closed form leave one out and
+the result is pushed through the reduction with the same `curve_from_scores` the production
+prediction uses, which means the reduction basis, the SRVF reference and every standardization
+statistic are the ones fitted on all 198 curves. This is a leave one out of the Gaussian
+processes inside a fixed representation, not a leave one out of the pipeline, and the artifact
+says so in its `loo_approximation` field. The cross check on what the approximation costs is the
+grouped 10 fold harness of `ufem.validate`, which does refit everything inside every fold, and
+which measures the curve level error the calibration then has to cover. Conformal validity is
+unaffected in the sense that matters least and most: the scores are exchangeable across runs
+either way, but a representation fitted on all runs makes each score slightly optimistic, and
+that is stated rather than argued away.
+
+### Coverage at a training point is measured by a nested leave one out, not by the deployed band
+
+The first complete calibrate run failed its own gate by over covering, 95.5 and 96.5 percent for
+two nominal 90 percent intervals. The cause is that a jackknife+ interval evaluated at a training
+point is centered on n-1 models that all fitted that point's response, so they interpolate it
+rather than predict it, and the flattery is largest exactly where the in sample fit most exceeds
+the out of sample fit. Every coverage this stage reports is therefore measured by removing the
+query point first and building the ensemble, the nonconformity scores and the variance scaling
+factor inside what remains. `FittedGP.nested_leave_one_out` makes that affordable: the reduced
+inverse comes from the inverse already computed, so all 198 nested problems for a target cost
+O(n^3) once rather than 198 factorizations. The deployed band, the one a new prediction would
+use, is still built from all 198 points and its median width is reported beside the coverage;
+what is not reported is that band's coverage at its own training points, because that number
+would be the flattering one.
+
+### The band domain is the abscissae where the observed family varies
+
+Standardizing a residual needs a positive variance, and both curve families have stations where
+all 198 runs take the same value: the origin of the load displacement family, where displacement
+control makes the force exactly zero, and 84 of the 201 damage stations, the first 0.4 mm before
+damage initiates and everything past 12.2 mm where every run has reached the same saturated
+value. The score there is 0/0. The rule adopted is to exclude stations where the observed family
+is constant, computed from the data and independent of the model, with the excluded span recorded
+in the artifact. The alternative, a floor under a variance that is genuinely zero, is the
+fabricated uncertainty of build spec 5.1 and is forbidden by ground rule 4. The damage saturation
+of build spec 5.6 therefore appears here as a domain statement rather than as a weak correlation,
+which is the more honest place for it.
+
+### The calibration gate thresholds live in code, not in configuration
+
+`configs/pipeline.yaml` carries the conformal alphas and the posterior draw count, which are
+parameters of the method. The gate constants of build spec 11.5, the 90 percent level and the
+0.35 ceiling on PIT outer decile mass, are module constants in `ufem/calibrate.py` with their
+reasoning in the comment above them, following `ufem/validate.py`, whose build spec 10.5 gate
+criterion is likewise in code. The reason is that a gate threshold in a configuration file is a
+gate threshold that can be relaxed by editing a YAML, which is precisely the move ground rule 4
+exists to prevent; a threshold in code has to be changed in a commit that says why. The
+consequence, and the reason this is written down, is that changing a gate threshold invalidates
+the stage cache through the code file hash rather than through the config hash.
+
+### The PIT criterion of build spec 11.5 is a statistic, not a look at a picture
+
+Build spec 11.5's third criterion is that the PIT heatmap shows no gross U shape on the softening
+branch. Implemented as written that would be a human reading a figure, which cannot fail a stage.
+It is implemented as the fraction of PIT values in the outer two deciles over every abscissa past
+each curve's own displacement at peak, a quantity a calibrated predictive distribution puts at
+0.20 by definition and which rises above it precisely when both tails fill in, which is what a U
+shape is. The threshold of 0.35 is 75 percent more outer mass than a calibrated model has; a
+predictive standard deviation half of what it should be puts 0.52 there, and
+`tests/test_calibrate.py` asserts that such a field trips the threshold. The threshold was
+committed before the first measurement was taken.
+
 <!-- BEGIN RESOLVED VERSIONS -->
 
 ### Resolved version matrix, 2026-08-30
