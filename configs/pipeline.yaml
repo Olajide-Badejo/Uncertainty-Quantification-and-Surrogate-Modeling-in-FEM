@@ -90,8 +90,59 @@ kernel:
   family: matern
   nu: 2.5
   ard: true
-  lengthscale_bounds: [0.05, 10.0]
+  # Build spec 10.3 justifies the lower bound by the minimum site spacing of the design, and
+  # the spec's own suggested 0.05 is below it: the nearest neighbour distance over the 198
+  # standardized design points has a minimum of 0.1138 and a fifth percentile of 0.1565. A
+  # lengthscale under the closest pair in the design describes correlation the design cannot
+  # observe, which is how a kernel ends up interpolating scatter. 0.11 is that measurement
+  # rounded down, and a test asserts the relationship rather than the number.
+  lengthscale_bounds: [0.11, 10.0]
   restarts: 8
+
+surrogate:
+  # The phase block reached 63 components at the 99 percent target of the pca block, which
+  # is not a ratio 198 samples support. The GPs are fitted on the phase components needed to
+  # reach this share of the phase block variance, capped at this many components; the phase
+  # variance the cap leaves behind is carried as reconstruction residual variance rather than
+  # being predicted. The decision and what it costs are in docs/DESIGN_DECISIONS.md.
+  phase_variance_target: 0.90
+  phase_max_components: 8
+  # The displacement coordinate along the arc length stations, the fourth block, which is
+  # what turns a predicted amplitude back into a curve in the physical plane. It is monotone,
+  # so it is represented in the same square root slope tangent space the warps use, and it is
+  # capped for the same reason as the phase block.
+  displacement_variance_target: 0.90
+  displacement_max_components: 10
+  # LogNormal hyperprior on the FITTED Gaussian noise variance, in standardized target units.
+  # A soft center, never a floor: the noise stays a free parameter of the marginal likelihood
+  # and the fit leaves this center by a factor of 25 in both directions across the 45 targets.
+  #
+  # What this variance means is what fixes the center. It is the nugget: the share of the
+  # target's variance the three inputs do not determine, which on a censored campaign with two
+  # covers and a strength is substantial. It is NOT the solver's numerical resolution, and
+  # centering it there (1e-4) is a specification error this project made and measured its way
+  # out of; the evidence is in docs/DESIGN_DECISIONS.md. Targets are standardized to unit
+  # variance, so the nugget lives in (0, 1]; a median of 0.1 with a log scale of 1.5 puts a
+  # 90 percent prior interval of [0.0085, 1.18] across that whole range, which is weakly
+  # informative about everything except exact interpolation.
+  noise_prior_median_variance: 0.1
+  noise_prior_log_scale: 1.5
+  # L-BFGS-B iteration cap per restart. Every fit in this campaign converges well inside it;
+  # the cap exists so a pathological target cannot stall the stage.
+  optimizer_max_iterations: 200
+
+validation:
+  # Grouped folds for anything that needs the registration and the bases refitted inside the
+  # fold (build spec 16.3). Ten, because 198 leave one out registrations would cost 43 minutes.
+  n_folds: 10
+  # The baseline gate of build spec 10.5 is decided on these four quantities of interest.
+  headline_qoi:
+    - P_max_N
+    - u_peak_mm
+    - k0_N_per_mm
+    - E_abs_Nmm
+  # Neighbours of the inverse distance weighted curve baseline of build spec 10.5(d).
+  n_neighbors: 3
 
 conformal:
   alphas: [0.1, 0.05]
