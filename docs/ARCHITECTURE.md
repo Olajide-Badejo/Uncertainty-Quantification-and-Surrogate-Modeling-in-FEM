@@ -64,6 +64,26 @@ Cache validity is checked, not assumed. Before declaring a hit the runner reruns
 digest. A file edited or truncated behind the pipeline's back is a miss, not a hit.
 `--force` reruns regardless.
 
+## Readers, and why they are not stages
+
+Three things read the artifact store without writing into it: `scripts/make_data_card.py`,
+`scripts/make_model_card.py`, and UFEM Lab (`ufem lab`, `src/ufem/ui/`). None of them is a
+stage, because none of them produces an artifact another stage consumes, and giving them cache
+keys would have meant a document could be served stale on a hit.
+
+They are held honest a different way. The two card generators write documents that a staleness
+test regenerates and compares byte for byte, so a card that has drifted from the pipeline is a
+failing test. The dashboard writes nothing, so it is held to binding law 5 directly:
+`dash_lint.check_ui_constants` parses every module under `src/ufem/ui/` and rejects any numeric
+literal that is neither structurally trivial nor a presentation constant declared in
+`ui/layout.py`. Anything else a panel displays has to have been read from an artifact.
+
+One consequence shaped the propagate stage. The reliability panel's threshold slider recomputes
+a failure probability, and recomputing it in the dashboard would have published a number no
+manifest covers, so the stage persists the Monte Carlo rows the recount needs
+(`mc_subsample.parquet`) and the panel calls the stage's own `recompute_limit_state` on them.
+A reader that needs to compute is a stage that did not write enough.
+
 ## Failure behavior
 
 The runner is a pure batch CLI. There is no `input()` anywhere in it, no interactive

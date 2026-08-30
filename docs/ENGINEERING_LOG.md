@@ -919,3 +919,142 @@ typesets.
 **What P8 inherits.** A validity domain that excludes 46.6 percent of the input distribution's
 mass, which the UI has to shade rather than mention, and a reliability panel whose honest default
 view is the bound rather than the point estimate.
+
+## 2026-08-30, Phase P8: UFEM Lab, the latency budget, and the README GIF
+
+**What shipped.** `ufem lab` serves the five panels of build spec section 15 at
+`http://127.0.0.1:8080`, over the artifact store and over nothing else. The UI package is
+`src/ufem/ui/`: `layout.py` for presentation constants, `store.py` for the artifact store,
+`predict.py` for one prediction with its band and its validity verdict, `figures.py` for the
+Plotly figures, `app.py` for the panels and the server. Beside it, `scripts/capture_ui_gif.py`
+records the README GIF from the running dashboard, and `scripts/make_model_card.py` generates
+`docs/MODEL_CARD.md` from the same artifacts the model card panel reads.
+
+**The latency budget, measured.** Build spec 15 sets 50 ms from a slider move to a repaint and
+says the surrogate inference is sub millisecond, so the budget is serialization and plot update.
+That was almost right and the almost is worth recording. The naive path, `predict_curve` plus
+`predict_qoi` through GPyTorch's own prediction, costs **78.7 ms median** for one design point,
+because each of the 45 fitted processes pays its own library call overhead and 45 of anything is
+not sub millisecond. Assembling the query independent part of every posterior once at startup and
+predicting through `ufem.propagate.predict_mean_and_variance` instead brings the same 45 targets
+to **11.9 ms**, which is the same arithmetic reorganized rather than a different answer, and a
+test in `tests/test_propagate.py` already asserted that equivalence to 1e-9 before this phase
+needed it.
+
+Server side, over 100 seeded slider positions inside the executed design box, after 10 warm up
+positions discarded:
+
+| Stage of one slider move | Median | p90 |
+|---|---|---|
+| Predict, 45 targets plus the reconstruction plus 11 jackknife+ intervals | 16.0 ms | 17.4 ms |
+| Predict plus both Plotly figures plus JSON serialization | **32.8 ms** | 35.3 ms |
+
+The serialized repaint payload is 42.1 kB for the two curve panels. The assertion in
+`tests/test_ui.py` is on the 32.8 ms figure against the 50 ms budget, which leaves 17 ms of
+headroom, most of it spent on figure construction rather than on the model.
+
+Browser side, measured by the playwright test: **59 ms** from the mouse click on the strength
+slider to the predicted mean curve's SVG path changing in headless chromium, with the server and
+the browser on the same machine. The asserted bound is 500 ms, which is generous by an order of
+magnitude on purpose: it covers the websocket round trip, Plotly's repaint and whatever the
+machine was doing, and a regression that crossed it would be a real one rather than noise. The
+probe reads the rendered path rather than the trace data, because Plotly 3 may hand a trace its
+`y` as a typed array specification object rather than as a JavaScript array, so reading the data
+proves nothing about what is on the screen.
+
+Startup, which is where the interaction cost was moved to: 1.79 s to import, 2.29 s to load the
+artifact store and rebuild the 45 GPyTorch modules from their stored parameters, 0.58 s to
+assemble the posterior pieces. 4.67 s in total, paid once.
+
+**The GIF.** 180 captured frames stored as 93, 14.66 s of playback, 960 by 600 px, **0.81 MB**,
+captured in 24.9 s of wall time with a further 3 s to quantize and write. It is committed at
+`docs/media/ufem_lab.gif` and embedded at the top of the README.
+
+Three measurements about it that changed what the spec's numbers mean, all recorded in
+`docs/DESIGN_DECISIONS.md`. Pillow merges a run of identical frames into one and accumulates
+their delays, so the 180 captured frames become 93 stored ones with no effect on playback. The
+GIF format carries a delay in hundredths of a second, so a nominal 12 fps interval of 83.3 ms is
+written as 80 ms and the file plays at 12.5 fps, which is why 180 frames last 14.66 s rather than
+15.00 s; the script reads the duration back out of the written file and asserts the 12 to 20
+second window against what a viewer will see rather than against what was requested. And the
+palette pass build spec 15.1 asks ffmpeg for is done by median cut to 128 colors over a strided
+sample of 24 frames, shared across every frame, which is also what lets Pillow write later frames
+as the bounding box of what changed.
+
+**No file size exemption was needed.** The GIF was expected to force one, since build spec 15.1
+fixes 12 fps and 960 px and build spec 3.3 caps tracked files at 5 MB. At 0.81 MB it does not, so
+`scripts/check_file_sizes.py` is still one rule with no carve outs and `tests/test_laws.py`
+asserts the GIF is tracked rather than asserting it is exempt.
+
+**One new artifact, and the determinism check that let it in.** The reliability panel's threshold
+slider needs Monte Carlo rows to recount, and the propagate stage was holding its 100000 draws in
+memory and writing summaries. It now also writes `mc_subsample.parquet`, 20000 rows and 5.75 MB
+inside the artifact store, carrying the three inputs, the validity flag, the mean and calibrated
+sigma of all eleven targets, and the jackknife+ band ends for the three limit state targets. The
+rows are the seeded epistemic subsample the stage already draws, so no new randomness enters. The
+rerun took **37.3 s** against 38.6 s at P7 and reproduced all ten previous outputs bitwise,
+checked against the hashes recorded before the change; `propagation.json` is the only file whose
+digest moved, and it moved because it gained a `subsample` block.
+
+That subsample is a subsample, and the panel says so. At the configured peak load threshold it
+gives Pf = 0.0463 where the headline sample gives 0.0479, a gap of about one standard error of
+the smaller estimate, and a test asserts the two agree within three.
+
+**Binding law 5, made mechanical.** `dash_lint.check_ui_constants` parses every module under
+`src/ufem/ui/` and rejects any numeric literal that is neither one of `{0, 1, 2, -1}` nor part of
+a module level assignment in `ui/layout.py` whose name ends in a presentational suffix. Parsed
+rather than grepped, because `0.9` in a band level and `0.9` in an opacity are the same four
+characters. It runs in the CI lint job with no Python stack at all, and `tests/test_ui.py` imports
+the same function rather than reimplementing it.
+
+It fired four times during development, and every one was a real finding rather than a false
+positive: `int(pair, 16)` in a hex to rgba converter, which became `bytes.fromhex`; three
+`[:12]` hash truncations, which became a named `SHORT_HASH_CHARS`; and the port `8080`, which
+moved to `ufem/runner.py` where the rest of the command line defaults live, because a port is an
+environment fact and not a presentational choice. The check is planted against four ways in the
+test file.
+
+**The sensitivity panel is the honest one, and it is the one that took the longest to decide.**
+Build spec 15 asks that panel for Sobol bars with uncertainty whiskers and the pointwise stacked
+band. Every one of the 24 chaos expansions failed the Q2 gate at P6, so there is nothing to put on
+those axes that would not be a fabrication. The panel now shows the gate outcome, the per target
+Q2 table with the explainable ceiling and the design roughness beside it, a horizontal bar chart
+of Q2 with the two publication thresholds drawn as rules so a reader can see every bar falling
+left of both, and the Gaussian process posterior distributions as intervals labeled indicative
+only in the P6 report's own words. The functional indices are not drawn at all; the panel says
+where they are and that they are withheld. A dashboard is where a withheld number is most likely
+to reappear as a picture, which is exactly why it does not here.
+
+**Wall times.** Propagate rerun 37.3 s, of which the eleven targets' moments and densities are
+28.9 s, the three calibrated bands over 100000 draws 2.4 s, the curve fan 2.4 s. GIF capture 24.9 s
+plus 3 s to assemble. Model card generation under 1 s. The playwright test takes 7.4 s end to end
+including launching the dashboard and the browser. Full test suite including the slow markers:
+**621 s**, 10 minutes 21 seconds, which is the P4 fold harness and the manufactured pipeline test
+as it has been since P4.
+
+**Gates.** **575 tests pass** with everything selected, up from 526 at P7. 556 pass with the slow
+markers excluded, which is the `test-full` CI job's selection, and 429 pass under
+`not slow and not fullstack`, which is the light stack `test-fast` job's selection on a runner
+with no torch and no artifact store. `ruff check src tests scripts`, `scripts/dash_lint.py` with
+its new third sweep, and `scripts/check_file_sizes.py` over 237 tracked files are all clean. The
+staleness gate on `docs/DATA_CARD.md` and the 16 report fragments still passes untouched, and a
+second staleness gate now covers `docs/MODEL_CARD.md`.
+
+**`ci.yml` was not changed, and the reason is worth writing down rather than leaving as an
+absence.** `test-fast` installs an explicit light stack list and never reads the `[dev]` extras,
+so adding playwright and Pillow there cannot reach it. `test-full` does install `[dev]` and will
+now acquire playwright, but not a browser, and every test that needs one is marked `slow` and
+excluded from both jobs anyway; the browser test additionally probes for the chromium build and
+skips with a named reason when it is absent. The lint job runs the new `check_ui_constants` sweep
+with no Python stack at all, because it is `ast` and `re`. Nothing about the new dependencies
+reaches a job that cannot afford them.
+
+**Deviations from the specification, all four recorded in `docs/DESIGN_DECISIONS.md`.** Pillow
+rather than ffmpeg for the GIF. A step driven capture rather than a real time one. No Sobol bars
+on the sensitivity panel, because there are no publishable indices. And no size exemption in
+`check_file_sizes.py`, because the file that was supposed to need one does not.
+
+**What P9 inherits.** A dashboard that reads the artifact store and a model card generated from
+it, both of which will go stale the moment an ablation changes a fitted model, and both of which
+have a test that will say so. The report gained nothing this phase, deliberately: the UI is not a
+report section, and the model card figures it points at were already committed at P5.
