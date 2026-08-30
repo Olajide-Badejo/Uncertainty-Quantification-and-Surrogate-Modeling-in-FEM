@@ -48,6 +48,15 @@ from ufem.audit import (  # noqa: E402
     VALIDITY_PARQUET,
 )
 from ufem.audit import STAGE_NAME as AUDIT_STAGE  # noqa: E402
+from ufem.calibrate import (  # noqa: E402
+    BAND_EXAMPLES_PARQUET,
+    CALIBRATION_JSON,
+    COVERAGE_SWEEP_PARQUET,
+    PIT_BINS,
+    PIT_PARQUET,
+    SIGNAL_FORCE,
+)
+from ufem.calibrate import STAGE_NAME as CALIBRATE_STAGE  # noqa: E402
 from ufem.config import FEATURE_ORDER, config_hash, features, load_config  # noqa: E402
 from ufem.grid import (  # noqa: E402
     DAMAGE_GRID_PARQUET,
@@ -60,6 +69,12 @@ from ufem.grid import STAGE_NAME as GRID_STAGE  # noqa: E402
 from ufem.ingest import DESIGN_PARQUET, LOAD_PARQUET  # noqa: E402
 from ufem.ingest import STAGE_NAME as INGEST_STAGE  # noqa: E402
 from ufem.manifest import stage_dir  # noqa: E402
+from ufem.plotting.calibration import (  # noqa: E402
+    conformal_band,
+    coverage_sweep,
+    crps_skill,
+    pit_heatmap,
+)
 from ufem.plotting.censoring import calibration_plot, completion_surface  # noqa: E402
 from ufem.plotting.registration import (  # noqa: E402
     amplitude_loadings,
@@ -569,6 +584,61 @@ def main() -> int:
     RESULTS["pmax_validation"] = {
         "r2_test": r2_by_model,
         "n_folds": int(baselines["context"]["n_folds"]),
+    }
+
+    # ------------------------------------------------------------------
+    # Phase P5: calibrated uncertainty. Every number below was measured by the calibrate
+    # stage and written to one of its artifacts; this section reads and draws, and the paired
+    # before and after of build spec 11.4 is carried through all four figures.
+    calibrate_dir = _stage(CALIBRATE_STAGE, digest)
+    calibration = json.loads((calibrate_dir / CALIBRATION_JSON).read_text(encoding="utf-8"))
+    sweep_frame = pd.read_parquet(calibrate_dir / COVERAGE_SWEEP_PARQUET)
+    pit_frame = pd.read_parquet(calibrate_dir / PIT_PARQUET)
+    band_frame = pd.read_parquet(calibrate_dir / BAND_EXAMPLES_PARQUET)
+    headline = list(calibration["context"]["headline_qoi"])
+
+    print("fig_coverage_sweep.pdf")
+    # Four panels across one column leave about 18 characters of annotation width, and the
+    # table's own labels are longer than that, so the sweep gets short forms. The tables keep
+    # the full names; nothing but the panel annotation is abbreviated here.
+    short_labels = {
+        "P_max_N": "Peak load",
+        "u_peak_mm": "Peak displ.",
+        "k0_N_per_mm": "Stiffness",
+        "E_abs_Nmm": "Abs. energy",
+    }
+    save_figure(
+        coverage_sweep(sweep_frame, headline, short_labels),
+        OUT / "fig_coverage_sweep.pdf",
+    )
+
+    print("fig_pit_heatmap.pdf")
+    save_figure(
+        pit_heatmap(pit_frame, SIGNAL_FORCE, 1.0 / PIT_BINS),
+        OUT / "fig_pit_heatmap.pdf",
+    )
+
+    print("fig_conformal_band.pdf")
+    save_figure(
+        conformal_band(band_frame, SIGNAL_FORCE, 1.0 / 1000.0, "Load [kN]"),
+        OUT / "fig_conformal_band.pdf",
+    )
+
+    print("fig_crps_skill.pdf")
+    save_figure(
+        crps_skill(calibration["scalar"], headline, short_labels),
+        OUT / "fig_crps_skill.pdf",
+    )
+
+    RESULTS["calibration"] = {
+        "gate_passed": bool(calibration["gate"]["passed"]),
+        "force_band_coverage": calibration["functional"][SIGNAL_FORCE]["bands"]["0.1"][
+            "empirical"
+        ],
+        "pit_outer_mass": {
+            stage: calibration["pit_softening"][SIGNAL_FORCE][stage]["outer_mass"]
+            for stage in ("before", "after")
+        },
     }
 
     RESULTS["config_sha256"] = digest

@@ -264,3 +264,51 @@ class TestNoStylingIsPossible:
         sup_norm_scores(truth, mean, modulation)
         simultaneous_band(mean, modulation, 2.0)
         np.testing.assert_array_equal(modulation, original)
+
+
+class TestTheReadmeAgreesWithTheArtifact:
+    """Ground rule 10: a README claim that disagrees with the manifest is a CI failure.
+
+    The status table is the one place in the README that carries a number before the P10
+    injection, so it is the one place that needs this check. The numbers are read out of the
+    calibrate stage's manifest and its result artifact and looked for verbatim in the row.
+    """
+
+    def test_the_status_row_quotes_the_measured_calibration_numbers(self, repo_root):
+        import json
+
+        from ufem.calibrate import CALIBRATION_JSON, SIGNAL_FORCE
+        from ufem.calibrate import STAGE_NAME as CALIBRATE_STAGE
+        from ufem.config import config_hash, load_config
+        from ufem.manifest import load_manifest, stage_dir
+
+        config = load_config(repo_root)
+        directory = stage_dir(
+            repo_root / config.pipeline.paths.artifact_root,
+            CALIBRATE_STAGE,
+            config_hash(config),
+        )
+        if not (directory / "manifest.json").is_file():
+            pytest.skip("the calibrate stage has not run for this config hash")
+        extra = load_manifest(directory)["extra"]
+        calibration = json.loads((directory / CALIBRATION_JSON).read_text(encoding="utf-8"))
+        band = calibration["functional"][SIGNAL_FORCE]["bands"][f"{GATE_ALPHA:g}"]
+
+        rows = [
+            line
+            for line in (repo_root / "README.md").read_text(encoding="utf-8").splitlines()
+            if line.startswith("| P5 |")
+        ]
+        assert len(rows) == 1, "the README status table must carry exactly one P5 row."
+        row = rows[0]
+        for value in (
+            f"{extra['functional_coverage'][SIGNAL_FORCE]:.4f}",
+            f"[{band['wilson_low']:.3f}, {band['wilson_high']:.3f}]",
+            f"{extra['variance_scaling_factors']['force_curve']:.3f}",
+        ):
+            assert value in row, (
+                f"the README P5 status row does not quote {value!r}, which is what the "
+                f"calibrate manifest at {directory} records. Ground rule 10: fix the README, "
+                "not this test."
+            )
+        assert ("passed" if extra["gate"]["passed"] else "failed") in row

@@ -82,6 +82,7 @@ SCALAR_CONFORMAL_PARQUET = "scalar_conformal.parquet"
 CURVE_CONFORMAL_PARQUET = "curve_conformal.parquet"
 PIT_PARQUET = "pit_by_abscissa.parquet"
 COVERAGE_SWEEP_PARQUET = "coverage_sweep.parquet"
+BAND_EXAMPLES_PARQUET = "band_examples.parquet"
 CONFORMAL_TEX = "conformal_scalars.tex"
 DIAGNOSTICS_TEX = "conformal_diagnostics.tex"
 CALIBRATION_MD = "calibration_summary.md"
@@ -769,6 +770,63 @@ def functional_calibration(
     }
 
 
+def band_examples(
+    signal: str,
+    jobs: list[str],
+    u_grid: np.ndarray,
+    truth: np.ndarray,
+    mean: np.ndarray,
+    sigma: np.ndarray,
+    record: dict[str, Any],
+    alpha: float,
+) -> pd.DataFrame:
+    """Three curves with their bands, written out so the report figure only reads.
+
+    The three are chosen by their own sup norm score: the median run, the 90th percentile run,
+    and the worst one. Picking the worst deliberately is the point. A band figure that showed
+    three comfortable curves would be a decoration; the run the model handles worst is the one
+    a reader needs to see, and the simultaneous band is only worth claiming if it contains it.
+    """
+    from scipy import stats
+
+    scores = np.asarray(record["scores"], dtype=float)
+    scale = record["bands"][f"{alpha:g}"]["band_scale"]
+    gaussian = float(stats.norm.ppf(1.0 - alpha / 2.0))
+    order = np.argsort(scores)
+    chosen = {
+        "median": int(order[order.size // 2]),
+        "p90": int(order[int(0.9 * (order.size - 1))]),
+        "worst": int(order[-1]),
+    }
+    frames = []
+    for label, index in chosen.items():
+        # The honest before: the pointwise Gaussian interval the uncalibrated model would
+        # have given at the same nominal level. It is pointwise rather than simultaneous and
+        # it trusts the Gaussian, which is exactly what the comparison is about.
+        half_before = gaussian * sigma[index]
+        half_after = scale * np.asarray(record["scaled_sigma"], dtype=float)[index]
+        frames.append(
+            pd.DataFrame(
+                {
+                    "signal": signal,
+                    "example": label,
+                    "job": jobs[index],
+                    "sup_score": float(scores[index]),
+                    "u_mm": u_grid,
+                    "truth": truth[index],
+                    "loo_mean": mean[index],
+                    "sigma_raw": sigma[index],
+                    "sigma_scaled": np.asarray(record["scaled_sigma"], dtype=float)[index],
+                    "lower_gaussian": mean[index] - half_before,
+                    "upper_gaussian": mean[index] + half_before,
+                    "lower": mean[index] - half_after,
+                    "upper": mean[index] + half_after,
+                }
+            )
+        )
+    return pd.concat(frames, ignore_index=True)
+
+
 def pit_by_abscissa(standardized: np.ndarray, n_bins: int = PIT_BINS) -> np.ndarray:
     """Probability integral transform histogram at every abscissa, as a ``(n_bins, n_grid)``.
 
@@ -916,9 +974,30 @@ def evaluate_gate(
 # ---------------------------------------------------------------------------
 
 
+#: Presentation units for the interval width column, so a table of five different physical
+#: quantities reads in the units the report uses everywhere else (kN, mm, kN/mm, J).
+WIDTH_UNITS: dict[str, tuple[str, float]] = {
+    "P_max_N": ("kN", 1.0e-3),
+    "u_peak_mm": ("mm", 1.0),
+    "k0_N_per_mm": ("kN/mm", 1.0e-3),
+    "E_abs_Nmm": ("J", 1.0e-3),
+    "P_residual_N": ("kN", 1.0e-3),
+    "P_knee_N": ("kN", 1.0e-3),
+    "u_knee_mm": ("mm", 1.0),
+    "u_damage_half_sat_mm": ("mm", 1.0),
+    "softening_ratio": ("-", 1.0),
+    "damage_at_10mm": ("-", 1.0),
+    "arclength_total": ("-", 1.0),
+}
+
+
 def _fmt(value: float, digits: int = 3) -> str:
     if value is None or not np.isfinite(value):
         return "{--}"
+    # A rounded negative zero prints as "-0.000", which reads as a measurement rather than as
+    # the zero it is.
+    if abs(value) < 0.5 * 10.0 ** (-digits):
+        value = 0.0
     return f"{value:.{digits}f}"
 
 
@@ -937,7 +1016,8 @@ def build_conformal_table(
         r"\midrule",
     ]
     for target in headline:
-        label = QOI_LABELS.get(target, target)
+        unit, scale = WIDTH_UNITS[target]
+        label = f"{QOI_LABELS.get(target, target)} [{unit}]"
         for position, alpha in enumerate(sorted(alphas, reverse=True)):
             key = f"{alpha:g}"
             row = scalar[target]["jackknife_plus"][key]
@@ -946,7 +1026,7 @@ def build_conformal_table(
             lines.append(
                 f"{name} & {100 * row['nominal']:.0f}\\,\\% & {_fmt(row['empirical'])} & "
                 f"[{_fmt(row['wilson_low'])}, {_fmt(row['wilson_high'])}] & "
-                f"{_fmt(cross['empirical'])} & {_fmt(row['median_width'], 4)} \\\\"
+                f"{_fmt(cross['empirical'])} & {_fmt(row['median_width'] * scale, 2)} \\\\"
             )
     lines += [r"\bottomrule", r"\end{tabular}"]
     return "\n".join(lines) + "\n"
@@ -1113,6 +1193,7 @@ def run(repo_root: Path | str, config: Config, config_sha256: str) -> Path:
     pit: dict[str, dict[str, Any]] = {}
     curve_rows: list[pd.DataFrame] = []
     pit_rows: list[pd.DataFrame] = []
+    band_rows: list[pd.DataFrame] = []
     u_peak = qoi["u_peak_mm"].to_numpy(dtype=float)
     for signal in CURVE_SIGNALS:
         mask = informative_abscissae(observed[signal])
@@ -1148,6 +1229,18 @@ def run(repo_root: Path | str, config: Config, config_sha256: str) -> Path:
                         for alpha in alphas
                     },
                 }
+            )
+        )
+        band_rows.append(
+            band_examples(
+                signal,
+                jobs,
+                u_signal,
+                truth_signal,
+                mean_signal,
+                sigma_signal,
+                record,
+                GATE_ALPHA,
             )
         )
         functional[signal] = {
@@ -1228,6 +1321,7 @@ def run(repo_root: Path | str, config: Config, config_sha256: str) -> Path:
         (scalar_frame, SCALAR_CONFORMAL_PARQUET),
         (pd.concat(curve_rows, ignore_index=True), CURVE_CONFORMAL_PARQUET),
         (pd.concat(pit_rows, ignore_index=True), PIT_PARQUET),
+        (pd.concat(band_rows, ignore_index=True), BAND_EXAMPLES_PARQUET),
         (sweep, COVERAGE_SWEEP_PARQUET),
     ):
         path = directory / name

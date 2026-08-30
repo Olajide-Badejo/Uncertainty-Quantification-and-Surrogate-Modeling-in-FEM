@@ -31,6 +31,8 @@ GENERATED = (
     f"{TABLES_DIR}/importance_weighting.tex",
     f"{TABLES_DIR}/reduction_summary.tex",
     f"{TABLES_DIR}/baselines_table.tex",
+    f"{TABLES_DIR}/conformal_scalars.tex",
+    f"{TABLES_DIR}/conformal_diagnostics.tex",
 )
 
 
