@@ -51,7 +51,7 @@
     "registered_amplitude": 5,
     "unregistered_curves": 15
   },
-  "config_sha256": "0acbf0e3731b68f1806fa1aae1977c3f0ed7326fa0d9dbfb2f990d233348a5f7",
+  "config_sha256": "d35707765c5fbb9c13b3f39d9d4adc9596fc42aafdae9fe7e7393b5a943da4b8",
   "damage_U2_at_half_sat_median_mm": 8.302366311258577,
   "damage_median_at_U2_10mm": 0.9470000267028807,
   "damage_saturation_level": 0.9470000267028807,
@@ -167,6 +167,27 @@
       "nearest_neighbour": 0.6206293627847357,
       "quadratic_chaos": 0.6660613973167793
     }
+  },
+  "propagation": {
+    "analytic_median_ratio": 1.1360710754468175,
+    "characteristic_value_N": 33253.07428018114,
+    "limit_states": {
+      "damage_at_10mm_above": {
+        "pf_conservative": 0.95976,
+        "pf_point": 0.2958
+      },
+      "peak_load_below_N": {
+        "pf_conservative": 0.26537,
+        "pf_point": 0.04787
+      },
+      "residual_ratio_below": {
+        "pf_conservative": 0.80672,
+        "pf_point": 0.0
+      }
+    },
+    "n_samples": 100000,
+    "out_of_domain_fraction": 0.46648,
+    "peak_envelope_width_kN": 25.658751017124157
   },
   "registration": {
     "mean_peak_registered_kN": 38.03931142644312,

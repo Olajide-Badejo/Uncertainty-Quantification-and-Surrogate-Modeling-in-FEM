@@ -327,7 +327,30 @@ class SensitivitySettings(_Frozen):
 
 
 class McSettings(_Frozen):
+    """The propagation budget of build spec 13.1, one field per uncertainty layer.
+
+    ``n_samples`` sizes the aleatory layer and is the only one of the four the stage may not
+    reduce: build spec 13.1 fixes it at 1e5 or more. The other three size the epistemic layer
+    and the curve fan, which are the parts a wall time overrun is allowed to trade against,
+    and a reduction taken there is recorded in the stage manifest rather than made silently.
+    """
+
     n_samples: int = Field(ge=1)
+    epistemic_subsample: int = Field(ge=2)
+    posterior_draws: int = Field(ge=2)
+    curve_subsample: int = Field(ge=2)
+
+    @model_validator(mode="after")
+    def _check_subsamples(self) -> McSettings:
+        for name in ("epistemic_subsample", "curve_subsample"):
+            value = getattr(self, name)
+            if value > self.n_samples:
+                raise ValueError(
+                    f"mc.{name} is {value}, above mc.n_samples {self.n_samples}. Both layers "
+                    "draw their rows from the aleatory sample, so neither can ask for more "
+                    "rows than that sample has."
+                )
+        return self
 
 
 class LimitStates(_Frozen):

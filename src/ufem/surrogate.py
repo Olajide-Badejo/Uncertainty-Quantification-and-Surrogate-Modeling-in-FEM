@@ -447,6 +447,38 @@ class FittedGP:
                 distribution.variance.numpy().astype(float),
             )
 
+    def cross_covariance(self, X: np.ndarray) -> np.ndarray:
+        """Noiseless prior covariance between the rows of ``X`` and the training design.
+
+        Returns a ``(n_query, n_train)`` array in standardized units. It is the same kernel
+        object :meth:`predict` uses, asked for a rectangular block instead of a square one, so
+        no caller ever has to write the Matern expression a second time.
+
+        The propagation stage of build spec 13.1 needs this block rather than a finished
+        prediction: from one evaluation of it, the posterior mean, the posterior variance and
+        all ``n`` leave one out cross predictions at the same query points follow by matrix
+        algebra, which is what makes a 1e5 sample Monte Carlo through the surrogate cost
+        seconds instead of an hour. ``tests/test_propagate.py`` pins that algebra against
+        :meth:`predict`, so the fast path is checked against the library rather than trusted.
+        """
+        import torch
+
+        model, _likelihood = self._model()
+        query = torch.tensor(np.atleast_2d(np.asarray(X, dtype=float)))
+        with torch.no_grad():
+            block = model.covar_module(query, torch.tensor(self.train_x)).to_dense()
+            return block.numpy().astype(float)
+
+    def prior_variance(self) -> float:
+        """``k(x, x)`` in standardized units, which for this kernel is the outputscale.
+
+        Stated as its own accessor rather than inlined at the call site because the identity
+        is a property of the stationary Matern kernel of build spec 10.3 and would quietly
+        stop being true under a kernel that is not stationary. A contract test asserts it
+        against the kernel's own diagonal.
+        """
+        return self.outputscale()
+
     def kernel_matrix(self) -> np.ndarray:
         """The training covariance including the fitted noise, in standardized units."""
         import torch

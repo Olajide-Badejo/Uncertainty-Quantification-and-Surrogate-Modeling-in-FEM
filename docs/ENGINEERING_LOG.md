@@ -769,3 +769,153 @@ it does inherit is a number worth carrying: the response is rough at the scale t
 resolves, by a median of 39 percent of the peak load standard deviation between nearest
 neighbours, so any failure probability computed from a smooth surrogate of this campaign carries
 that roughness as an unmodeled error and the report has to say so next to the Pf.
+
+## 2026-08-30, Phase P7: propagation, limit states, reliability with honest bounds
+
+**The headline number is not the failure probability, it is the gap between it and its bound.**
+Over 100000 input draws through the mean surrogate, the peak load falls below its characteristic
+value with probability 0.04787 (binomial standard error 0.00068), the residual capacity ratio at
+20 mm falls below one half in no draw at all, and the compressive damage at 10 mm exceeds 0.93
+with probability 0.29580 (standard error 0.00144). The surrogate aware bounds of build spec
+13.2, counting a failure whenever the calibrated 90 percent jackknife+ interval crosses the
+threshold, are 0.26537, 0.80672 and 0.95976. The bounds are five, unboundedly and three times the
+point estimates. That is the result of this phase: on this campaign the reliability estimate is
+dominated by what the surrogate does not know rather than by the variability of the beam, and any
+report quoting only the left hand column would be describing a precision it does not have.
+
+The residual capacity row is the clearest case. The mean surrogate never once predicts a
+softening ratio below one half, so the point estimate is a bound at the resolution of the sample
+and would, alone, read as a member that cannot fail this criterion. The band says 0.81. Both
+numbers are true statements about different questions, and the second is the one a reader should
+carry away.
+
+**46.6 percent of the Monte Carlo mass falls outside the validity domain.** This is the largest
+single qualification on everything above and it was not a surprise: 202 of the 400 designed runs
+never converged, the completion model puts the domain boundary at P(complete) = 0.5, so a
+population drawn from the declared input distributions lands outside that boundary about half
+the time. It appears in every table, on every figure, and in the stage manifest. The stage also
+reports each probability restricted to the draws inside the domain: 0.0491 for peak load against
+0.0479 overall, and 0.3259 for damage against 0.2958, so the censored corner is the more
+optimistic one for the damage limit state by three points of probability.
+
+**The threshold revisit, and the config change it caused.** Build spec 13.2 asks for
+characteristic value logic on the peak load limit state, and the number committed with the config
+skeleton at P0 was a placeholder of 31000 N with a comment saying so. The 5th percentile of the
+propagated aleatory peak load is 33253 N. The placeholder sat 6.8 percent below it, which is a
+different limit state rather than a rounding, so the config was changed once to 33200 N, the
+measurement rounded down to the nearest 100 N. That changed the config hash and forced a cold
+rerun of the whole pipeline, 17.0 minutes, which is the mechanism working rather than a cost to
+be avoided. The stage recomputes the characteristic value on every run and records the gap to the
+configured number, now 0.16 percent, and a test fails if the two drift apart again. Recorded with
+its reasoning in docs/DESIGN_DECISIONS.md.
+
+**The two layers, and what the second one says.** The aleatory layer is the input distributions
+through the mean surrogate. The epistemic layer is 64 draws from the calibrated predictive
+distribution at each of 20000 seeded subsampled inputs, where calibrated means the fitted
+predictive standard deviation times the variance scaling factor P5 measured against held out
+data. The ratio of epistemic to aleatory standard deviation is 0.627 for peak load and above one
+for seven of the eleven propagated quantities, reaching 1.844 for the softening ratio: for most
+of the QoI schedule the surrogate's uncertainty about a single beam exceeds the variation between
+beams. The layers are never added, and the separation is a property test rather than a
+convention, since the epistemic layer takes the standard deviation as an argument and returns the
+mean exactly when it is zero.
+
+Two internal consistency checks came out clean and are worth recording because they were the
+places a mistake would have hidden. The sampled predictive failure probabilities agree with the
+closed form Gaussian integral of the same quantity to 3e-4 or better on all three limit states
+(0.0769 against 0.0772, 0.1517 against 0.1514, 0.3842 against 0.3840). And the conservative
+counting rule is a union of the band crossing with the point failure, guarding against a
+jackknife+ interval that fails to contain the full model's mean; the union fired zero times over
+the 300000 draw and limit state combinations, so the guard was never needed and the count says so
+rather than the guard being assumed away.
+
+**The floor.** No probability below 1e-4 is claimed. The limit is not the Monte Carlo sample,
+which resolves 1e-5 per draw; it is 198 training runs on a response P6 measured to be rough at
+the design's own resolution. The statement is in the artifact, in the table caption, and in the
+report.
+
+**The analytic cross check disagrees, and the disagreement localizes exactly.** The v1 physics
+informed script was reimplemented as mechanics rather than transcribed. What survived is the
+geometry: its second moment is the gross value of the 250 by 150 mm section to three figures and
+its 1.6 m is the pin to load distance, so the script had the member in front of it. What did not
+survive is the structural system. It used a propped cantilever deflection of 7PL^3/(96EI), which
+matches no standard case (the propped cantilever with a central load gives 7PL^3/(768EI)) and in
+any event the model of build spec 6.2 is a determinate span with an overhang; it applied an
+invented strength factor on top of a modulus that is already a function of the strength; and it
+computed a deflection under a fixed 50 kN load, so its output could not be compared with anything
+the campaign measured. The clean model is a plane section rectangular stress block on the hogging
+section at the roller, whose effective depth is exactly the top cover, divided by the 800 mm
+lever arm.
+
+Verdict, against a model error of 15 percent declared before the comparison ran: the central
+tendency brackets and the dispersion does not. Analytic median 43.48 kN against the surrogate's
+38.27 kN, a ratio of 1.136, inside the stated error. Analytic coefficient of variation 0.0252
+against 0.0772, a factor of 0.326, and the analytic 5th percentile is 1.253 times the
+surrogate's, outside it. The two distributions agree about where the capacity is and disagree
+about how much it varies.
+
+The elasticities say why, and this is the part worth keeping. Regressing log peak load on log
+inputs over the 198 runs gives 0.735 for the strength, 1.001 for the top cover and -0.050 for the
+bottom cover, at a fit R2 of 0.698. The analytic model gives 0.048, 1.088 and -0.040. Two of the
+three agree closely: the geometric sensitivity is reproduced almost exactly, which says the
+structural idealization is right and the top cover really is the effective depth in both. The
+strength elasticity is out by a factor of fifteen. A section whose tension steel yields carries
+its reinforcement force whatever the concrete strength is, so an under reinforced flexural
+mechanism has almost no strength sensitivity, and 0.048 is what that mechanism implies. The
+campaign's 0.735 sits near the elasticity of the finite element model's own tensile strength
+scaling, ((fcm - 8)/20)^(2/3), which is 0.935 at the mean, and near the compression scaling's
+1.0. The peak load of the inherited campaign is governed by the concrete constitutive response,
+not by reinforcement yielding.
+
+That is a statement about the finite element model, and build spec 6.2 predicted it before any of
+this was measured: tension softening defined without fracture energy regularization while the
+strength varies sample to sample, and no mesh convergence study. It is the same defect P6
+measured from the other direction as roughness between neighbouring designs. Two phases, two
+methods, one cause, and it is the strongest argument this project has for the Track B
+corrections.
+
+Two further checks are consistent with that reading. Evaluated at each of the 198 training
+designs the analytic capacity correlates with the measured peak load at 0.406 and overpredicts it
+by 15.5 percent in the mean, which is the correlation a model reproducing only the geometric part
+of the variation would show. And the analytic elastic stiffness brackets the measurement without
+being tuned to it: 16.54 kN/mm on the gross section and 6.25 kN/mm on the fully cracked
+transformed section, against a campaign mean initial stiffness of 14.14 kN/mm, which is where a
+secant stiffness measured over a range beginning above the 4.30 kN cracking load belongs.
+
+**Wall times**, from the manifests: propagate 38.6 s, of which the eleven targets' means,
+variances, quantiles and density estimates are 29.1 s, the three calibrated bands over 100000
+draws 2.6 s, the 2000 curve fan 2.6 s, the input sample and the validity domain 1.7 s, and the
+whole analytic model plus its cross check 0.34 s. The budget was 8 minutes and no reduction of
+the epistemic layer was needed. The batching is what bought that: one cross covariance block per
+chunk yields the posterior mean, the posterior variance and all 198 leave one out cross
+predictions, so a 1e5 sample propagation through eleven Gaussian processes is a few matrix
+products rather than 1e5 library calls. Full pipeline, ingest through propagate: 1019.9 s, 17.0
+minutes, inside the 30 minute gate of build spec section 2, with 576.1 s of it still the P4 fold
+harness.
+
+**Gates.** 508 fast tests, up from 421 at P6, and 526 with the slow markers. `ruff`,
+`dash_lint.py` and `check_file_sizes.py` clean over 236 tracked files. The propagate stage
+reproduces all ten of its artifacts bitwise on a forced rerun. `latexmk` builds `main.pdf` at 33
+pages, up from 27, with no new overfull or underfull boxes and no undefined references. Three new
+generated table fragments joined the byte identity staleness gate.
+
+One overfull box did appear and was fixed rather than tolerated: the reliability table at its
+first full labels ran 96.7 pt past the text block, so each limit state now carries a short label
+for the table beside the full one for the artifact and the summary. The zero count cell was the
+other half of that width, and it now prints as a bound at the resolution of the sample rather
+than as a parenthetical, which is both narrower and more accurate.
+
+**One defect shipped inside this phase's own commits and is logged.** The density figure inferred
+which side of each threshold was the failure region from where the threshold sat relative to the
+median, which is backwards for a below type limit state by construction, so all three panels
+shaded the region where the member passes. Nothing but rendering the figure and looking at it
+would have caught it, and the regression test now reads the vertices of the shaded polygon, which
+is the closest a test gets to looking: 2 failed of 3 with the heuristic restored, 3 passed after.
+The direction is an argument now, taken from the limit state declaration that already carried it.
+Five figure labels also carried LaTeX spacing escapes, which matplotlib prints literally, so a
+legend read "47 backslash comma backslash percent"; escapes belong in the caption, which LaTeX
+typesets.
+
+**What P8 inherits.** A validity domain that excludes 46.6 percent of the input distribution's
+mass, which the UI has to shade rather than mention, and a reliability panel whose honest default
+view is the bound rather than the point estimate.

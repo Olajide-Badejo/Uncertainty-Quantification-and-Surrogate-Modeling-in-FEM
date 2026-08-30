@@ -181,12 +181,34 @@ sensitivity:
   gp_bootstrap_resamples: 20
 
 mc:
+  # The aleatory layer of build spec 13.1: input draws pushed through the mean surrogate.
+  # The spec asks for at least 1e5 and this is 1e5, which puts the plain Monte Carlo
+  # resolution at 1e-5 per draw. That is not the resolvable floor on a failure probability;
+  # the training set size is, and build spec 13.3 fixes that floor at about 1e-4.
   n_samples: 100000
+  # The epistemic layer: posterior draws from the calibrated predictive distribution at each
+  # of a seeded subsample of the aleatory draws. The subsample exists so the layer's memory is
+  # bounded by a number stated here rather than by whatever n_samples happens to be: the stage
+  # holds one (epistemic_subsample, posterior_draws) array per target and releases it before
+  # the next, which is 10 MB at these settings. 20000 by 64 puts the Monte Carlo error on a
+  # predictive failure probability of 0.05 at 1.9e-4, an order below the numbers it qualifies.
+  epistemic_subsample: 20000
+  posterior_draws: 64
+  # The curve envelope fan of build spec 13.1, which asks for at least 2000 predicted curves.
+  # Each one is a reconstruction through the warp, so this is the one part of the stage whose
+  # cost is per curve rather than matrix algebra.
+  curve_subsample: 2000
 
 # Limit states for the reliability stage. Each is a threshold on a QoI the pipeline
 # regenerates, never a hand typed result.
 limit_states:
-  peak_load_below_N: 31000.0     # placeholder characteristic value, 5th percentile logic, refit at P7
+  # The characteristic value of the propagated peak load: the 5th percentile of the aleatory
+  # layer, 33253 N, rounded down to the nearest 100 N so the declared threshold is never above
+  # the value measured. Build spec 13.2 asks for characteristic value logic rather than an
+  # arbitrary sigma multiple, and the placeholder committed at P0 (31000 N) sat 6.8 percent
+  # below the measurement. The revision is dated in docs/DESIGN_DECISIONS.md; the propagate
+  # stage recomputes the characteristic value on every run and records the gap to this number.
+  peak_load_below_N: 33200.0
   residual_ratio_below: 0.5
   damage_at_10mm_above: 0.93
 
