@@ -694,6 +694,12 @@ def main() -> int:
                 float(sensitivity["context"]["q2_publish_rankings"]),
                 float(sensitivity["context"]["q2_publish_values"]),
             ),
+            np.array(
+                [
+                    bool(sensitivity["targets"][name]["pce"]["ceiling_readable"])
+                    for name in sensitivity_targets
+                ]
+            ),
         ),
         OUT / "fig_sensitivity_gate.pdf",
     )

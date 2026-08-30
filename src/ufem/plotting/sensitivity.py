@@ -26,7 +26,6 @@ from ufem.plotting.style import (
     C_SERIES_1,
     C_SERIES_2,
     FIG_WIDTH_IN,
-    annotation_style,
 )
 
 #: One color per input, in ``ufem.config.FEATURE_ORDER``.
@@ -41,6 +40,7 @@ def q2_gate(
     ceiling: np.ndarray,
     labels: list[str],
     thresholds: tuple[float, float],
+    readable: np.ndarray | None = None,
 ) -> Any:
     """Every expansion's corrected leave one out Q2 against the two publication thresholds.
 
@@ -50,9 +50,19 @@ def q2_gate(
     but close to its own marker is a response the design cannot resolve; a bar far below its
     marker would be an expansion that is the problem. The distinction is the whole reason the
     marker is on the figure.
+
+    ``readable`` names the targets whose ceiling means what it says. A process that pinned
+    every lengthscale at its lower bound reports a nugget near zero and therefore a ceiling
+    near one, which is the interpolate the scatter corner rather than a statement that the
+    response is explainable, so those markers are omitted rather than drawn misleadingly.
     """
     values = np.asarray(q2, dtype=float)
     limit = np.asarray(ceiling, dtype=float)
+    usable = (
+        np.ones(values.size, dtype=bool)
+        if readable is None
+        else np.asarray(readable, dtype=bool)
+    )
     positions = np.arange(values.size, dtype=float)
     height = max(2.6, 0.20 * values.size + 1.0)
     fig, ax = plt.subplots(figsize=(FIG_WIDTH_IN, height))
@@ -65,7 +75,7 @@ def q2_gate(
         zorder=3,
     )
     ax.plot(
-        limit, positions, marker="|", ls="none", ms=9.0, color=C_SERIES_2,
+        limit[usable], positions[usable], marker="|", ls="none", ms=9.0, color=C_SERIES_2,
         markeredgewidth=1.6, zorder=5,
     )
     for value, threshold, style in zip(
@@ -121,13 +131,12 @@ def sobol_agreement(
     reported separately in the artifact.
 
     ``levels`` carries each quantity's publication level from the Q2 gate of build spec 12.1.
-    A panel whose level is ``not_published`` is drawn hatched and labeled, because the figure's
-    job there is to show that the two constructions agree about a model that failed its trust
-    gate, which is evidence that the gate fired for a reason rather than because one of the two
-    routes is broken. Nothing hatched on this figure is a published index.
+    A panel whose level is ``not_published`` is drawn hatched, and says so in its title rather
+    than in a box over the data: the withheld marking has to be unmissable, which is not the
+    same as putting it where it covers the bars it is marking.
     """
     fig, axes = plt.subplots(
-        1, len(targets), figsize=(FIG_WIDTH_IN, 2.9), sharey=True
+        1, len(targets), figsize=(FIG_WIDTH_IN, 3.1), sharey=True
     )
     axes = np.atleast_1d(axes)
     positions = np.arange(len(inputs), dtype=float)
@@ -152,10 +161,10 @@ def sobol_agreement(
                     median,
                     width=width,
                     facecolor=color if filled else "none",
-                    edgecolor="white" if (filled and withheld) else color,
-                    linewidth=0.0 if (filled and not withheld) else 1.0,
-                    alpha=0.35 if withheld else (0.9 if filled else 1.0),
-                    hatch="///" if withheld else None,
+                    edgecolor=color,
+                    linewidth=0.0 if filled else 1.1,
+                    alpha=(0.32 if withheld else 0.85) if filled else 1.0,
+                    hatch="///" if (filled and withheld) else None,
                     zorder=3 if filled else 2,
                 )
                 ax.vlines(
@@ -179,20 +188,18 @@ def sobol_agreement(
         ax.set_xticklabels([input_labels.get(name, name) for name in inputs])
         ax.set_ylim(0.0, 1.05)
         ax.grid(axis="x", visible=False)
-        caption = labels.get(target, target)
-        if withheld:
-            caption += "\nwithheld by the $Q^2$ gate"
-        ax.annotate(
-            caption,
-            xy=(0.04, 0.96),
-            xycoords="axes fraction",
-            **annotation_style(),
+        title = labels.get(target, target)
+        ax.set_title(
+            f"{title}\n(withheld)" if withheld else title,
+            fontsize=9.0,
+            color=C_INK_2,
+            pad=4.0,
         )
     axes[0].set_ylabel("Sobol index [-]")
     handles = [
-        Patch(facecolor=C_INK_2, edgecolor="none", alpha=0.9, label="first order $S_i$"),
-        Patch(facecolor="none", edgecolor=C_INK_2, linewidth=1.0, label="total $T_i$"),
-        Line2D([], [], color=C_INK_2, lw=0.9, label="GP posterior 90\\,\\%"),
+        Patch(facecolor=C_INK_2, edgecolor="none", alpha=0.85, label="first order $S_i$"),
+        Patch(facecolor="none", edgecolor=C_INK_2, linewidth=1.1, label="total $T_i$"),
+        Line2D([], [], color=C_INK_2, lw=0.9, label="GP posterior 90 percent"),
         Line2D(
             [], [], marker="D", ls="none", ms=3.6, color="white",
             markeredgecolor=C_INK_2, markeredgewidth=0.9, label="sparse PCE",
@@ -200,7 +207,7 @@ def sobol_agreement(
     ]
     fig.legend(
         handles=handles, loc="lower center", ncol=4, fontsize=8.0,
-        bbox_to_anchor=(0.5, -0.08),
+        bbox_to_anchor=(0.5, -0.07),
     )
     fig.tight_layout(pad=0.4)
     return fig
@@ -223,6 +230,10 @@ def functional_bands(
     variance is a thousandth of the peak's will happily show a confident looking split of
     almost nothing. Stations the observed family does not vary at are absent from both panels
     rather than filled in.
+
+    A withheld block says so in the panel title and the legend sits outside the axes, because a
+    stacked band fills its whole panel and anything drawn on top of it hides exactly the data
+    the reader came for.
     """
     rows = functional.loc[
         (functional["block"] == block) & functional["usable"].astype(bool)
@@ -236,7 +247,7 @@ def functional_bands(
     shares = np.vstack([rows[f"S_{name}"].to_numpy(dtype=float) for name in inputs])
     interaction = np.clip(1.0 - shares.sum(axis=0), 0.0, None)
     fig, axes = plt.subplots(
-        2, 1, figsize=(FIG_WIDTH_IN, 4.1), sharex=True,
+        2, 1, figsize=(FIG_WIDTH_IN, 4.3), sharex=True,
         gridspec_kw={"height_ratios": [2.6, 1.0]},
     )
     colors = [INPUT_COLORS[index % len(INPUT_COLORS)] for index in range(len(inputs))]
@@ -252,21 +263,26 @@ def functional_bands(
     axes[0].set_ylim(0.0, 1.0)
     axes[0].grid(axis="x", visible=False)
     handles = [
-        Patch(facecolor=color, edgecolor="none", label=input_labels.get(name, name))
+        Patch(facecolor=color, edgecolor="white", linewidth=0.6,
+              label=input_labels.get(name, name))
         for color, name in zip(colors, inputs)
     ]
     handles.append(
-        Patch(facecolor=INTERACTION_COLOR, edgecolor="none", label="interaction")
+        Patch(facecolor=INTERACTION_COLOR, edgecolor="white", linewidth=0.6,
+              label="interaction")
     )
-    axes[0].legend(handles=handles, loc="lower right", ncol=2, fontsize=8.0)
     if level == "not_published":
-        axes[0].annotate(
-            "withheld by the $Q^2$ gate of build spec 12.1:\n"
-            "no share on this panel is a published index",
-            xy=(0.03, 0.97),
-            xycoords="axes fraction",
-            **annotation_style(),
+        axes[0].set_title(
+            "withheld by the $Q^2$ gate of build spec 12.1: "
+            "no share below is a published index",
+            fontsize=9.0,
+            color=C_INK_2,
+            pad=5.0,
         )
+    axes[0].legend(
+        handles=handles, loc="lower center", ncol=4, fontsize=8.0,
+        bbox_to_anchor=(0.5, 1.0) if level != "not_published" else (0.5, 1.10),
+    )
     axes[1].plot(
         u, rows["variance"].to_numpy(dtype=float), color=C_INK_2, lw=1.3, zorder=3
     )
