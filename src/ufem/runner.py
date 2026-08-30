@@ -36,6 +36,13 @@ from ufem.manifest import (
 #: the QoI table that ``grid`` extracts, so running audit first would mean either splitting
 #: the stage in two or having it recompute the QoI schedule itself. The reordering is
 #: recorded in docs/DESIGN_DECISIONS.md.
+#:
+#: ``validate`` sits before ``calibrate`` rather than after it, where build spec 7.1 lists it.
+#: The dependency runs that way: the jackknife+ conformal calibration of build spec 11.1 is
+#: built on out of sample residuals, and this is the stage that produces them honestly. A
+#: calibration fitted before its own residuals exist would have to compute them itself, which
+#: is how a project ends up with two cross validation paths reporting two numbers. Also
+#: recorded in docs/DESIGN_DECISIONS.md.
 STAGES: "OrderedDict[str, tuple[str, str]]" = OrderedDict(
     [
         ("ingest", ("ufem.ingest", "P1")),
@@ -44,8 +51,8 @@ STAGES: "OrderedDict[str, tuple[str, str]]" = OrderedDict(
         ("register", ("ufem.register", "P3")),
         ("reduce", ("ufem.reduce", "P3")),
         ("surrogate", ("ufem.surrogate", "P4")),
-        ("calibrate", ("ufem.calibrate", "P5")),
         ("validate", ("ufem.validate", "P4")),
+        ("calibrate", ("ufem.calibrate", "P5")),
         ("sensitivity", ("ufem.sensitivity", "P6")),
         ("propagate", ("ufem.propagate", "P7")),
         ("report", ("ufem.report", "P9")),
