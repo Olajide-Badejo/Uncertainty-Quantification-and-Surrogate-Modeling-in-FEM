@@ -90,3 +90,67 @@ exceeding the unregistered one.
 If the measurement contradicts any of the three, the honest conclusion is that registration
 is not doing what spec 7.2 claims for this data, and the report says so rather than keeping
 the claim and burying the number.
+
+### Results, measured 2026-08-30
+
+Everything above this line was committed before `scripts/ablation_1_registration.py` existed
+and is left exactly as written. Two predictions held and one was wrong.
+
+| Metric | Registered | Unregistered | Prediction | Verdict |
+|---|---|---|---|---|
+| Components at 99 percent variance | 5 | 15 | unregistered 2 to 3 times higher | **held**, ratio 3.00 |
+| \|corr(PC2, d mean/du)\| | 0.117 | 0.111 | unregistered above 0.7 and clearly higher | **refuted** |
+| Peak load bias at rank 5 [N] | -60.8 | -228.0 | both negative, unregistered larger | **held**, 3.75 times larger |
+
+**Components: held, at the top of the predicted range.** The unregistered family needs 15
+components to reach 99 percent of its variance where the registered family needs 5, a ratio
+of exactly 3.00 against a predicted 2 to 3, and the absolute count lands inside the predicted
+8 to 18 window. The registered count also sits inside the 3 to 6 that spec 10.2 expected.
+This is the clearest of the three results: the phase variation really was consuming about ten
+extra components, and separating it out really does buy them back.
+
+**Peak load bias: held, in direction and in the ordering.** Both reconstructions under
+predict the peak, as predicted, and the unregistered one is worse by a factor of 3.75: -228.0
+N against -60.8 N on a mean peak of about 38.1 kN, so 0.60 percent against 0.16 percent. The
+comparison is at matched rank, k = 5, and the registered side is carried back through its own
+warps to the displacement grid before its peak is read, so neither side is flattered by being
+scored in a space where the phase never had to be reproduced. The caveat I flagged in advance
+is the right one to keep: 0.60 percent of peak load is a real bias in the predicted direction,
+but it is small in engineering terms, and the argument for registration rests more on the
+component count than on this number.
+
+**The derivative mode: refuted, and specifically wrong about where to look.** I predicted the
+unregistered PC2 would correlate with the derivative of the mean curve above 0.7 and would
+clearly exceed the registered side. Measured, the two are 0.111 and 0.117: both negligible,
+and the registered side is fractionally the *higher* of the two. The prediction fails on
+magnitude and on direction at once.
+
+Sweeping the correlation across the first six components afterwards, which is a post hoc
+diagnostic and not evidence on the same footing as the three committed metrics, shows where
+the structure actually is:
+
+| Component | 1 | 2 | 3 | 4 | 5 | 6 |
+|---|---|---|---|---|---|---|
+| Unregistered | 0.620 | 0.111 | 0.027 | 0.060 | 0.054 | 0.247 |
+| Registered | 0.499 | 0.117 | 0.205 | 0.549 | 0.053 | 0.068 |
+
+The derivative shaped structure sits in **PC1**, not PC2, and the ordering there does run the
+way the mechanism argues, 0.620 unregistered against 0.499 registered. So the underlying
+physics I described is not obviously wrong; my prediction about which component would carry
+it was. On this family PC1 is not a pure amplitude mode with PC2 as the leading correction,
+which is the picture I had in mind when I wrote the prediction. PC1 already mixes amplitude
+with the leading phase effect, because the curves whose peaks come late are also, through
+Fcm, the curves whose peaks are high, so the two effects are correlated in the design rather
+than orthogonal.
+
+I am not going to promote the PC1 number to a confirmation. It was not the committed
+prediction, the gap is modest, and a metric selected after seeing six of them is not the same
+evidence as a metric named in advance. The correct summary is that this metric, as specified,
+failed, and that the specification was at fault rather than the mechanism.
+
+**What this ablation supports.** Registration is worth its place in the pipeline on the
+component count, which is unambiguous and large, and on the peak bias, which is directionally
+right though modest. It is not supported by the spurious mode check as I defined it, and the
+report says so rather than quietly substituting the PC1 number. The methodological claim of
+spec 7.2 survives on two legs of three, and the third leg was mis specified by me rather than
+disproved by the data.
