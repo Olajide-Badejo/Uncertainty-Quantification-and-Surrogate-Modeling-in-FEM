@@ -31,7 +31,7 @@ Results are injected here from the artifact manifests at Phase P10. Nothing is c
 | P4 | Gaussian process surrogate, baselines, validation | Complete at this commit: the surrogate beats all four baselines out of sample on the four headline scalar quantities of interest (peak load, displacement at peak, initial stiffness, absorbed energy); on the whole reconstructed curve the three non trivial baselines edge it out, and the table says so |
 | P5 | Conformal calibration, scalar and functional | Complete at this commit: the calibration gate of build spec 11.5 passed, with simultaneous 90 percent functional bands and jackknife+ scalar intervals both at 0.9040 leave one out coverage (95 percent Wilson interval [0.855, 0.938], exact finite sample bracket [0.900, 0.905]); the measured out of fold variance scaling is within one percent of 1 for nine of eleven scalars and 1.793 for the load displacement curve |
 | P6 | Sensitivity | Complete at this commit: the sparse chaos expansions were fitted and cross checked against Gaussian process posterior Sobol distributions, and the trust gate of build spec 12.1 withheld all 24 of them, so no Sobol index value and no input ranking is published from this campaign; the gate outcome, the explainable variance ceiling implied by the fitted nuggets and the model free design roughness are published in its place |
-| P7 | Propagation and reliability | Not started |
+| P7 | Propagation and reliability | Complete at this commit: 100000 sample Monte Carlo through the calibrated surrogate with the aleatory and epistemic layers kept apart; the headline failure probability is 0.0479 that the peak load falls below its 33.2 kN characteristic value, binomial standard error 0.00068, against a surrogate aware conservative bound of 0.2654, with 46.6 percent of the Monte Carlo mass outside the validity domain and no probability below 1e-4 claimed |
 | P8 | UFEM Lab dashboard | Not started |
 | P9 | Ablations and complete report | Not started |
 | P10 | Final QA, README injection, release | Not started |
@@ -57,7 +57,7 @@ first; if it does not agree with what you expect, nothing downstream is worth re
 `ufem run all` walks the stages in order. A stage whose cache key is unchanged prints
 `[cache hit]` and is skipped; `--force` reruns it. Stages that a later phase will implement
 raise with the phase named, so at this commit everything from `run ingest` through
-`run sensitivity` does real work and `run all` then reports that `propagate` arrives in P7 and
+`run propagate` does real work and `run all` then reports that `report` arrives in P9 and
 exits nonzero. That is the intended behavior, not a failure of the install. The full Gaussian
 process fit is a single threaded, under 60 second cost (`ufem run surrogate`); the grouped fold
 validation harness (`ufem run validate`) recomputes the registration and every reduction basis
@@ -65,7 +65,9 @@ inside each of its 10 folds and costs several minutes, per the arithmetic in
 `docs/DESIGN_DECISIONS.md`; `ufem run calibrate` costs about two minutes, almost all of it the
 10 fold CV+ cross check, and it exits nonzero if the calibration gate fails; `ufem run
 sensitivity` costs about three minutes, almost all of it the 200 posterior realizations per
-target that the Sobol cross check needs.
+target that the Sobol cross check needs; `ufem run propagate` costs about forty seconds for
+the whole 100000 sample propagation, because the Monte Carlo through the Gaussian processes is
+batched matrix algebra rather than one library call per draw.
 
 Two products of this phase are scripts rather than stages, and both read the artifact store:
 

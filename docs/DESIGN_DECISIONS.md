@@ -765,6 +765,167 @@ defect, but it means the chunk size is not a free implementation detail: changin
 hashes. `tests/test_p6_determinism.py` asserts agreement at round off across chunk sizes and
 bitwise identity at a fixed one, and this paragraph is why the constant has a docstring.
 
+## 2026-08-30, Phase P7: propagation and reliability
+
+### The peak load limit state is now the measured characteristic value, and the config changed once
+
+Build spec 13.2 asks for the peak load threshold to come from characteristic value logic rather
+than from a multiple of a standard deviation, and names the predecessor's two sigma threshold as
+the counterexample. The number committed at P0 was 31000 N with the comment
+`placeholder characteristic value, 5th percentile logic, refit at P7`, so revisiting it was
+scheduled rather than discovered.
+
+Measured: the 5th percentile of the propagated aleatory peak load distribution is 33253 N. The
+placeholder sat 6.8 percent below that. Six point eight percent of a capacity is not a rounding;
+it is a different limit state, with a failure probability roughly a quarter of the one the
+characteristic definition implies. So `limit_states.peak_load_below_N` was changed once, to
+33200 N, the measurement rounded **down** to the nearest 100 N.
+
+Three details of that choice, each deliberate:
+
+- **Down, not to nearest.** Rounding up would put the declared threshold above the value
+  measured, so the limit state would be slightly stricter than the definition it claims to
+  implement. Rounding down keeps the declared threshold a value the distribution actually
+  reaches at or below the 5th percentile.
+- **The circularity is stated rather than hidden.** A threshold set at the 5th percentile has an
+  aleatory failure probability of about 0.05 by construction, and the measured 0.0479 says only
+  that the arithmetic is consistent. The row's informative content is the gap to the conservative
+  bound, 0.2654, which is what surrogate error does to a probability at a threshold sitting in
+  the thick part of the distribution. The report says this in as many words.
+- **The recomputation is a gate, not a comment.** The stage recomputes the characteristic value
+  on every run and records `relative_gap` against the configured number;
+  `tests/test_propagate.py::TestTheStageProducts::test_the_characteristic_value_agrees_with_the_configured_threshold`
+  fails if the two drift past 1 percent. If the surrogate or the input model changes enough to
+  move the 5th percentile, the failure is loud and the next revision is deliberate too.
+
+The change moved the config hash and every artifact downstream of ingest was regenerated: 17.0
+minutes for the whole pipeline. That is the cost of having the config hash mean something, and it
+is the correct cost.
+
+### The epistemic layer is pointwise, and what that understates is stated
+
+Build spec 13.1 allows either a manageable subsample with full posterior sampling or the
+calibrated predictive distribution per point. This stage takes the second: 64 draws from
+`N(mu(x), (tau sigma(x))^2)` at each of 20000 seeded subsampled input draws, with `tau` the
+variance scaling factor the P5 calibration measured.
+
+What that buys is an epistemic layer whose width was checked against held out data rather than
+asserted, at a cost of milliseconds, with the memory bounded by a number declared in the config
+rather than by whatever `mc.n_samples` happens to be.
+
+What it costs is honesty about correlation. Drawing independently at each input draw treats the
+surrogate's error at two nearby designs as unrelated, which it is not: a Gaussian process that is
+biased low in one corner of the input space is biased low across that whole corner. For a
+population quantile that matters, because a correlated error moves the quantile bodily while an
+independent one only blurs it, so the predictive quantiles reported here are narrower than a
+joint posterior sampling would give.
+
+The reason this is acceptable is that the statement the phase leans on does not depend on it. The
+conservative bound of build spec 13.2 counts a failure whenever the calibrated band crosses the
+threshold at that draw, which is a worst case over the band and therefore valid whatever the
+correlation structure is. The pointwise layer is reported as what it is, and the bound is what
+carries the argument. A joint pathwise posterior propagation, which the P6 sampler already has
+the machinery for, is the natural Track B extension and is recorded here as a known omission
+rather than discovered later as a gap.
+
+### The conservative bound is a union, and the union never fired
+
+Build spec 13.2 says to count a failure whenever the calibrated 90 percent band crosses the
+threshold. Taken literally that is `lower < threshold` for a below type limit state, and it has a
+failure mode: the jackknife+ interval is a quantile over an ensemble of leave one out models, not
+an interval centered on the full model's prediction, so nothing guarantees it contains that
+prediction. A draw whose mean prediction fails while its band does not would make the bound fall
+below its own point estimate, which is not a bound.
+
+So the counting rule is the union of the band crossing and the point failure, and the stage
+records how often the second term was needed. Over the three limit states and 100000 draws each
+it was needed zero times: the jackknife+ interval contained the mean prediction everywhere it
+mattered. The union stays anyway, because a guard that is measured to be unnecessary on this
+campaign is not a guard that is unnecessary on the next one, and the measurement costs one
+integer in the artifact.
+
+### The analytic model is mechanics, not a transcription, and three parts of v1 were dropped
+
+Salvage item 6 is `Scripts/Analytical Propagation model (physics-informed).py`, and build spec
+13.4 asks for it reimplemented cleanly. Reading it, three of its ingredients could not be kept:
+
+1. **The structural system.** It used `7 P L^3 / (96 E I)`, described as a propped cantilever.
+   The propped cantilever with a central load deflects `7 P L^3 / (768 E I)`, a factor of eight
+   away, and the model of build spec 6.2 is not a propped cantilever at all: a pin, a roller and
+   one vertical load make three reaction components against three equations, so the member is
+   statically determinate and the correct tip deflection is `P a^2 (L + a) / (3 E I)`.
+2. **The strength factor.** `1 - 0.15 (28 - fcm) / 28`, clipped to `[0.7, 1.1]`, has no
+   mechanical content, and applying it to a deflection computed with a modulus that is already
+   the Eurocode function of the strength counts the same dependence twice.
+3. **The fixed 50 kN load.** It makes the output a deflection under an arbitrary load rather than
+   a capacity, so nothing the campaign measured could be compared against it.
+
+What was kept is the geometry, which checks out (the script's `I` is the gross second moment of
+the 250 by 150 mm section to three figures and its `L` is the pin to load distance), the idea of
+an independent forward model on the same inputs, and the modulus as a function of the strength,
+now taken from `ufem.config.derived_E` rather than from a second column.
+
+The reimplementation adds shear flexibility to the elastic stiffness, which the original omitted.
+It is worth 3.5 percent on a member this deep, which is small, and it is included because leaving
+it out would have been a choice nobody wrote down.
+
+### The stated model error is 15 percent and it was declared before the comparison
+
+`MODEL_ERROR_FRACTION = 0.15` sits in `src/ufem/analytic.py` with the four effects that justify
+it: the neglected concrete tensile contribution, the damaged plasticity compression response
+being past its plateau at the displacement where the finite element peak occurs, a mesh that is
+coarse for a bending gradient, and the viscoplastic overshoot. A stress block against a nonlinear
+analysis of the same section is conventionally good to about ten percent; those four widen it.
+
+It is in code beside the comparison rather than in configuration, for the same reason the
+calibration gate thresholds and the Q2 publication thresholds are: a tolerance that can be edited
+without a code change is a tolerance that gets edited when the comparison fails. This one did
+partly fail, and it was not edited.
+
+### The bracketing test is quantile by quantile, and the first version of it was vacuous
+
+The first implementation asked whether the analytic 5th to 95th percentile interval, widened by
+the model error, contains the surrogate's. It passed trivially and a test written to fail it
+would not fail: 15 percent of a 38 kN capacity is a 5.7 kN band, wider than the entire 5th to
+95th percentile spread of the response, so an analytic distribution that was a point mass at the
+right location would have passed.
+
+The shipped criterion asks each of the 5th, 50th and 95th percentiles to agree to the same
+relative tolerance, which is the statement that actually distinguishes two distributions of
+different width. Under it the central tendency brackets at a ratio of 1.136 and the dispersion
+does not, the 5th percentile being out by a factor of 1.253. The change was made before the real
+comparison was run, on the synthetic test that exposed the vacuity, and the discarded version is
+recorded here because a criterion nobody can fail is worse than no criterion.
+
+### The chunk sizes are module constants and are part of the artifact contract
+
+`PREDICTION_CHUNK` and `BAND_CHUNK` are not arguments the caller picks, and the reason is
+measured rather than stylistic. The pairwise distances inside the kernel go through
+`torch.cdist`, which switches between a direct evaluation and a matrix multiply formulation
+depending on the shapes it is handed; the two are algebraically identical and numerically differ
+by about 3e-11 on values of order one. So the same query set evaluated in different chunk sizes
+gives the same answer but not the same bytes, and the bitwise determinism gate of build spec 17.2
+holds at a fixed chunking. This is the same class of effect the P6 entry records for the pathwise
+sampler's chunk size, and it is recorded here for the same reason: a future performance tweak
+that changes a chunk size will change the last bits of the stage's outputs, and whoever makes it
+should know that before the determinism test tells them.
+
+### Two accessors were added to the surrogate rather than a second kernel implementation
+
+The propagation needs the prior cross covariance between its query points and the training
+design, because everything else follows from it by matrix algebra. Two ways to get it were
+available: reimplement the Matern kernel in the propagation stage, or ask the fitted model for a
+rectangular block of the kernel it already carries. `FittedGP.cross_covariance` and
+`FittedGP.prior_variance` are the second, and they are three lines each.
+
+The alternative would have been a second implementation of the covariance function, which is how
+a project ends up with a propagation stage that is quietly using different hyperparameters or a
+different smoothness than the surrogate it claims to propagate. The existing training point
+method `leave_one_out_cross_predictions` was deliberately left untouched rather than refactored
+to call through the new one: it is the calibration stage's reference implementation, a
+refactoring would have perturbed the last bits of the P5 artifacts for no gain, and a test
+asserts the query point path reduces to it at the training design instead.
+
 <!-- BEGIN RESOLVED VERSIONS -->
 
 ### Resolved version matrix, 2026-08-30
