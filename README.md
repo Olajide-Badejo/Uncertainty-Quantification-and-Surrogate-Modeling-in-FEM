@@ -1,5 +1,13 @@
 # UFEM 2.0: Calibrated Surrogate Modeling and UQ of a Softening RC Beam
 
+![UFEM Lab, the local dashboard over the artifact store](docs/media/ufem_lab.gif)
+
+*UFEM Lab (`ufem lab`): the calibrated surrogate morphing under a strength sweep, the 400
+point design with its completion probability surface, one finite element run against the
+surrogate's prediction at the same inputs, and a limit state threshold recounting the
+propagated Monte Carlo sample. Every number on those panels was read from an artifact the
+pipeline wrote. Recorded from the running dashboard by `scripts/capture_ui_gif.py`.*
+
 This project builds a reproducible uncertainty quantification pipeline for a reinforced
 concrete beam with material softening. From a completed campaign of Abaqus concrete damaged
 plasticity simulations it constructs a functional surrogate of the whole load displacement
@@ -32,7 +40,7 @@ Results are injected here from the artifact manifests at Phase P10. Nothing is c
 | P5 | Conformal calibration, scalar and functional | Complete at this commit: the calibration gate of build spec 11.5 passed, with simultaneous 90 percent functional bands and jackknife+ scalar intervals both at 0.9040 leave one out coverage (95 percent Wilson interval [0.855, 0.938], exact finite sample bracket [0.900, 0.905]); the measured out of fold variance scaling is within one percent of 1 for nine of eleven scalars and 1.793 for the load displacement curve |
 | P6 | Sensitivity | Complete at this commit: the sparse chaos expansions were fitted and cross checked against Gaussian process posterior Sobol distributions, and the trust gate of build spec 12.1 withheld all 24 of them, so no Sobol index value and no input ranking is published from this campaign; the gate outcome, the explainable variance ceiling implied by the fitted nuggets and the model free design roughness are published in its place |
 | P7 | Propagation and reliability | Complete at this commit: 100000 sample Monte Carlo through the calibrated surrogate with the aleatory and epistemic layers kept apart; the headline failure probability is 0.0479 that the peak load falls below its 33.2 kN characteristic value, binomial standard error 0.00068, against a surrogate aware conservative bound of 0.2654, with 46.6 percent of the Monte Carlo mass outside the validity domain and no probability below 1e-4 claimed |
-| P8 | UFEM Lab dashboard | Not started |
+| P8 | UFEM Lab dashboard | Complete at this commit: `ufem lab` serves the five panels of build spec 15 over the artifact store, with the server side slider to repaint work measured at 32.8 ms median over 100 seeded positions against the 50 ms budget and 59 ms slider to repaint in a headless browser; the UI package holds no computed constant, which is checked by parsing every module rather than by grepping it; the sensitivity panel draws no Sobol bar, because every index is withheld |
 | P9 | Ablations and complete report | Not started |
 | P10 | Final QA, README injection, release | Not started |
 
@@ -69,6 +77,16 @@ target that the Sobol cross check needs; `ufem run propagate` costs about forty 
 the whole 100000 sample propagation, because the Monte Carlo through the Gaussian processes is
 batched matrix algebra rather than one library call per draw.
 
+The dashboard of build spec 15 reads the same artifact store and computes nothing of its own:
+
+```powershell
+.venv\Scripts\ufem lab
+```
+
+It loads the store before the server starts, so a pipeline that has not run produces a named
+error on the command line rather than a dashboard of empty panels, and it then serves
+`http://127.0.0.1:8080`. `--host`, `--port` and `--no-browser` are there for automation.
+
 Two products of this phase are scripts rather than stages, and both read the artifact store:
 
 ```powershell
@@ -88,8 +106,17 @@ run.
 
 ```powershell
 .venv\Scripts\python scripts\make_data_card.py
+.venv\Scripts\python scripts\make_model_card.py
 .venv\Scripts\python report\figures_src\make_figures.py
 cd report; latexmk -pdf -halt-on-error main.tex
+```
+
+The README GIF above is regenerated the same way, from the running dashboard rather than from
+a mock of it. It needs a browser, which `pip install -e .[dev]` does not bring:
+
+```powershell
+.venv\Scripts\python -m playwright install chromium
+.venv\Scripts\python scripts\capture_ui_gif.py
 ```
 
 ## Repository layout
@@ -116,7 +143,9 @@ UFEM_2.0/
     conformal_functional.py the simultaneous band construction, about 100 lines of NumPy
     baselines.py            the four models the surrogate has to beat out of sample
     sensitivity.py          sparse chaos with the Q2 gate, posterior Sobol, functional indices
-    plotting/               every report and UI figure, behind one style module
+    propagate.py            the two Monte Carlo layers, the limit states, the conservative bound
+    plotting/               every report figure, behind one style module
+    ui/                     UFEM Lab: store, predict, figures, app, layout constants
   data/
     audit_reference/        committed golden values from the pre build audit, P1 and P2 gate on these
     processed/              the small pipeline outputs, committed for self containment
@@ -129,8 +158,10 @@ UFEM_2.0/
     tables/                 generated LaTeX fragments, committed, staleness gated by a test
     figures/                generated PDFs, committed so report.yml can build without Python
   tests/                    contract, property, golden, manufactured, integration
-  scripts/                  dash_lint.py, check_file_sizes.py, make_data_card.py, ablation_1_registration.py
-  docs/                     BUILD_SPEC, ARCHITECTURE, DESIGN_DECISIONS, ENGINEERING_LOG, DEFECT_LOG, DATA_CARD
+  scripts/                  dash_lint.py, check_file_sizes.py, make_data_card.py,
+                            make_model_card.py, capture_ui_gif.py, ablation_1_registration.py
+  docs/                     BUILD_SPEC, ARCHITECTURE, DESIGN_DECISIONS, ENGINEERING_LOG,
+                            DEFECT_LOG, DATA_CARD, MODEL_CARD, media/ufem_lab.gif
   .github/workflows/        ci.yml, report.yml
 ```
 
@@ -144,6 +175,15 @@ was refuted, and the refutation is reported as such rather than quietly dropped.
 completion model's cross validated performance, the validity domain, and the importance
 weighting sensitivity. It is generated by `scripts/make_data_card.py` from the artifact store
 and a test fails if the committed copy has drifted from what the pipeline produces now.
+
+`docs/MODEL_CARD.md` is the surrogate's model card, generated the same way by
+`scripts/make_model_card.py` and gated the same way: what the model predicts and from what,
+the validity domain and the censored corner it excludes, the out of sample table, the
+calibration gate with its measured coverage, the propagated reliability numbers with their
+bounds and their floor, and a known failure modes section that names the design roughness,
+the withheld sensitivity indices, the censoring, the damage saturation and the fixed model
+parameters. UFEM Lab's model card panel is built from the same artifacts, so the document
+and the dashboard cannot disagree.
 
 ## Versioning
 

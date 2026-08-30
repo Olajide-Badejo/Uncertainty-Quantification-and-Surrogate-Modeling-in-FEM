@@ -1,9 +1,16 @@
-"""Build spec section 3.3: no file over 5 MB enters this repository.
+"""Build spec section 3.3: no file over 5 MB enters this repository, and none is exempt.
 
 The v1 tree shared one git directory with an interpreter, twelve console script
 executables, and 405 MB of solver scratch. The fix is not a better .gitignore, it is a gate:
 anything git actually tracks must be under 5 MB, and large inherited data is referenced by
 manifest hash at a pinned location instead of copied in.
+
+``docs/media/ufem_lab.gif`` was expected to need an exemption here, because build spec 15.1
+requires it to be committed at 12 fps and 960 px and a recording of a live dashboard is not
+obviously a small file. It did not: the measured capture is 0.90 MB, well inside the rule, so
+no exemption was added. That measurement is in docs/ENGINEERING_LOG.md and the decision not to
+weaken the gate pre emptively is in docs/DESIGN_DECISIONS.md. If a future capture crosses
+5 MB, that is a decision to make then, in a commit that says so.
 
 Exit 0 is clean, exit 1 lists every offender with its size.
 """

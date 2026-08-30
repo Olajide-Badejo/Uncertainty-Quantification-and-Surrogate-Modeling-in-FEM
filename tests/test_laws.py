@@ -40,7 +40,11 @@ def read(path):
 
 def test_dash_lint_is_clean_on_the_tree(repo_root):
     """Ground rule 3: no em dash or en dash anywhere the linter walks."""
-    hits = dash_lint.check_dashes(repo_root) + dash_lint.check_src_laws(repo_root)
+    hits = (
+        dash_lint.check_dashes(repo_root)
+        + dash_lint.check_src_laws(repo_root)
+        + dash_lint.check_ui_constants(repo_root)
+    )
     assert hits == [], "dash_lint violations:\n" + "\n".join(hits)
 
 
@@ -150,7 +154,12 @@ def test_src_never_references_quarantined_paths(src_files, repo_root):
 
 
 def test_no_tracked_file_exceeds_five_mb(repo_root):
-    """Build spec 3.3: the repository holds no file over 5 MB."""
+    """Build spec 3.3: the repository holds no file over 5 MB, and nothing is exempt.
+
+    The README GIF of build spec 15.1 was the file expected to force an exemption here. It
+    did not: the capture measures well under 1 MB, so the gate is still one rule with no carve
+    outs, and it stays that way until a measurement says otherwise.
+    """
     offenders = [
         (relative, os.path.getsize(repo_root / relative))
         for relative in check_file_sizes.tracked_files(repo_root)
@@ -159,6 +168,16 @@ def test_no_tracked_file_exceeds_five_mb(repo_root):
     ]
     assert offenders == [], "tracked files over 5 MB:\n" + "\n".join(
         f"{name}: {size / 1024 / 1024:.1f} MB" for name, size in offenders
+    )
+
+
+def test_the_readme_gif_is_committed(repo_root):
+    """Build spec 15.1 and the definition of done: the repository is not done without it."""
+    tracked = set(check_file_sizes.tracked_files(repo_root))
+    assert "docs/media/ufem_lab.gif" in tracked, (
+        "docs/media/ufem_lab.gif is not tracked. Regenerate it with "
+        "`python scripts/capture_ui_gif.py` and commit it; build spec 15.1 makes it a "
+        "deliverable rather than a decoration."
     )
 
 

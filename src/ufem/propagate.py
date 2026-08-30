@@ -121,6 +121,15 @@ QUANTILES_TEX = "propagated_quantiles.tex"
 ANALYTIC_TEX = "analytic_cross_check.tex"
 PROPAGATION_MD = "propagation_summary.md"
 
+#: The persisted Monte Carlo rows of build spec 15 panel 4. The reliability panel of UFEM Lab
+#: carries a threshold slider that recomputes a failure probability live, and binding law 5
+#: forbids it from recomputing anything the pipeline has not already stated: a dashboard that
+#: refitted a surrogate to answer a slider would be publishing a number no manifest covers.
+#: So the stage writes the rows the recomputation needs. They are exactly the seeded epistemic
+#: subsample this stage already draws, never a new sample, so no new randomness enters and the
+#: existing artifacts stay bitwise what they were.
+MC_SUBSAMPLE_PARQUET = "mc_subsample.parquet"
+
 #: The quantiles build spec 13.1 names, as probabilities.
 QUANTILE_LEVELS: tuple[float, ...] = (0.01, 0.05, 0.25, 0.50, 0.75, 0.95, 0.99)
 
@@ -696,6 +705,80 @@ def limit_state_result(
     }
 
 
+def subsample_column(target: str, quantity: str) -> str:
+    """Column name for one quantity of one target in :data:`MC_SUBSAMPLE_PARQUET`.
+
+    One function so the writer and every reader spell the name the same way. A dashboard that
+    guessed the column name and got it wrong would fail loudly, but a dashboard that guessed a
+    column name that happened to exist for a different target would not.
+    """
+    if quantity not in ("mean", "sigma", "lower", "upper"):
+        raise ValueError(
+            f"the persisted Monte Carlo subsample carries the quantities mean, sigma, lower "
+            f"and upper per target; asked for {quantity!r}."
+        )
+    return f"{target}_{quantity}"
+
+
+def recompute_limit_state(
+    frame: pd.DataFrame, target: str, direction: str, threshold: float
+) -> dict[str, Any]:
+    """Re-evaluate one limit state on the persisted subsample at an arbitrary threshold.
+
+    The arithmetic is :func:`limit_state_result`'s, restricted to the quantities the persisted
+    rows support: the point estimate with its binomial standard error and Wilson interval, the
+    conservative bound of build spec 13.2, and the point estimate inside the validity domain.
+    The epistemic layer is not here, because the posterior draws are not persisted and
+    resampling them in a dashboard would be a second answer to a question the stage already
+    answered at the committed thresholds.
+
+    This function exists so the UI recomputes nothing of its own. It is the same code path the
+    stage runs at the configured threshold, and a test asserts the two agree there exactly.
+    """
+    for quantity in ("mean", "lower", "upper"):
+        column = subsample_column(target, quantity)
+        if column not in frame.columns:
+            raise KeyError(
+                f"the persisted Monte Carlo subsample has no column {column!r}, so the limit "
+                f"state on {target!r} cannot be re-evaluated from it. The stage persists the "
+                "calibrated band only for the targets that carry a declared limit state; rerun "
+                "`ufem run propagate --force` if the limit state list has changed."
+            )
+    mean = frame[subsample_column(target, "mean")].to_numpy(dtype=float)
+    lower = frame[subsample_column(target, "lower")].to_numpy(dtype=float)
+    upper = frame[subsample_column(target, "upper")].to_numpy(dtype=float)
+    inside = frame["inside_domain"].to_numpy(dtype=bool)
+    n_samples = int(mean.size)
+    point = failure_mask(mean, threshold, direction)
+    band = (
+        failure_mask(lower, threshold, direction)
+        if direction == "below"
+        else failure_mask(upper, threshold, direction)
+    )
+    conservative = band | point
+    pf_point = float(point.mean())
+    hits = int(point.sum())
+    wilson_low, wilson_high = wilson_interval(hits, n_samples)
+    n_inside = int(inside.sum())
+    return {
+        "target": target,
+        "direction": direction,
+        "threshold": float(threshold),
+        "n_samples": n_samples,
+        "n_failures": hits,
+        "pf_point": pf_point,
+        "pf_standard_error": binomial_standard_error(pf_point, n_samples),
+        "pf_wilson_low": float(wilson_low),
+        "pf_wilson_high": float(wilson_high),
+        "pf_conservative": float(conservative.mean()),
+        "n_point_outside_band": int((point & ~band).sum()),
+        "pf_inside_domain": float(point[inside].mean()) if n_inside > 0 else float("nan"),
+        "n_inside_domain": n_inside,
+        "out_of_domain_fraction": float((~inside).mean()),
+        "resolvable": bool(pf_point >= RESOLVABLE_PF_FLOOR),
+    }
+
+
 def curve_envelope(
     surrogate: SurrogateModel, design: np.ndarray, levels: tuple[float, ...] = ENVELOPE_LEVELS
 ) -> pd.DataFrame:
@@ -1173,6 +1256,7 @@ def run(repo_root: Path | str, config: Config, config_sha256: str) -> Path:
     band_started = _time.perf_counter()
     thresholds = config.pipeline.limit_states.model_dump()
     limit_records: list[dict[str, Any]] = []
+    band_columns: dict[str, np.ndarray] = {}
     for state in LIMIT_STATES:
         name = state.target
         scores = conformal.loc[conformal["target"] == name, "score"].to_numpy(dtype=float)
@@ -1205,12 +1289,34 @@ def run(repo_root: Path | str, config: Config, config_sha256: str) -> Path:
             )
         )
         del draws
+        band_columns[subsample_column(name, "lower")] = lower[subsample]
+        band_columns[subsample_column(name, "upper")] = upper[subsample]
         print(
             f"[propagate] limit state {state.config_field}: Pf "
             f"{limit_records[-1]['pf_point']:.5f}, conservative "
             f"{limit_records[-1]['pf_conservative']:.5f}"
         )
     band_seconds = _time.perf_counter() - band_started
+
+    # ---- the persisted Monte Carlo rows -------------------------------------
+    subsample_frame = pd.DataFrame({"row": subsample.astype(np.int64)})
+    for position, feature in enumerate(FEATURE_ORDER):
+        subsample_frame[feature] = design[subsample, position]
+    subsample_frame["inside_domain"] = inside[subsample]
+    for name in targets:
+        subsample_frame[subsample_column(name, "mean")] = means[name][subsample]
+        subsample_frame[subsample_column(name, "sigma")] = sigmas[name][subsample]
+    for column, values in band_columns.items():
+        subsample_frame[column] = values
+    subsample_records = {
+        state.config_field: recompute_limit_state(
+            subsample_frame,
+            state.target,
+            state.direction,
+            float(thresholds[state.config_field]),
+        )
+        for state in LIMIT_STATES
+    }
 
     # ---- the characteristic value ------------------------------------------
     characteristic = float(np.quantile(means["P_max_N"], CHARACTERISTIC_LEVEL))
@@ -1342,6 +1448,21 @@ def run(repo_root: Path | str, config: Config, config_sha256: str) -> Path:
         },
         "targets": records,
         "limit_states": limit_records,
+        # What the persisted rows say at the configured thresholds. It is a subsample of the
+        # headline sample, so these probabilities are the headline ones plus Monte Carlo error
+        # at the smaller size, and they are reported separately rather than blended: the UI
+        # states which of the two it is showing, and a test pins its live recomputation to
+        # these numbers exactly.
+        "subsample": {
+            "file": MC_SUBSAMPLE_PARQUET,
+            "n_rows": int(subsample.size),
+            "source": (
+                "the seeded epistemic subsample of build spec 13.1, persisted so a threshold "
+                "can be re-evaluated without rerunning the stage"
+            ),
+            "out_of_domain_fraction": float((~inside[subsample]).mean()),
+            "limit_states": subsample_records,
+        },
         "analytic": analytic_record,
         "roughness": roughness,
         "roughness_caveat": roughness_sentence(roughness),
@@ -1366,6 +1487,7 @@ def run(repo_root: Path | str, config: Config, config_sha256: str) -> Path:
         (pd.DataFrame(limit_records), RELIABILITY_PARQUET),
         (envelope, CURVE_ENVELOPE_PARQUET),
         (analytic_frame, ANALYTIC_PARQUET),
+        (subsample_frame, MC_SUBSAMPLE_PARQUET),
     ):
         path = directory / name
         frame.to_parquet(path, engine="pyarrow", compression="zstd", index=False)
@@ -1381,6 +1503,7 @@ def run(repo_root: Path | str, config: Config, config_sha256: str) -> Path:
         "analytic_wall_time_s": analytic_seconds,
         "n_samples": int(settings.n_samples),
         "n_targets": len(targets),
+        "n_subsample_rows": int(subsample.size),
         "out_of_domain_fraction": payload["validity"]["out_of_domain_fraction"],
         "resolvable_pf_floor": RESOLVABLE_PF_FLOOR,
         "roughness_ratio": float(roughness["roughness_ratio"]),

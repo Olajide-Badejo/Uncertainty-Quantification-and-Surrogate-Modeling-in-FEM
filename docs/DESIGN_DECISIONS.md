@@ -926,6 +926,195 @@ to call through the new one: it is the calibration stage's reference implementat
 refactoring would have perturbed the last bits of the P5 artifacts for no gain, and a test
 asserts the query point path reduces to it at the training design instead.
 
+## 2026-08-30, Phase P8: UFEM Lab
+
+### The UI package is `src/ufem/ui/`, not a top level `ui/`
+
+Build spec section 8 does not name a location and section 15 only says the app exists, so the
+choice was open. It went inside the package for three reasons and one of them is the binding law.
+
+The dashboard reads the artifact store through `ufem.manifest`, `ufem.config`, `ufem.validity`,
+`ufem.surrogate`, `ufem.calibrate` and `ufem.propagate`, and it has to call
+`ufem.propagate.calibrated_band` and `ufem.propagate.recompute_limit_state` rather than own copies
+of them. Inside the package those are ordinary intra package imports; outside it they are a second
+distribution with a path dependency on the first, and the first thing a top level `ui/` would have
+needed is a `sys.path` insertion in its entry point. Second, `ufem lab` is a subcommand of the
+same console script as `ufem run`, so an editable install has to ship the UI anyway. Third, the
+`fullstack` marker and the light stack CI job already know how to skip things that need torch, and
+a package under `src/ufem/` inherits that machinery.
+
+The cost is that `dash_lint.check_src_laws` now walks the UI too, which is not a cost: the bare
+except and seeded RNG bans apply there as much as anywhere.
+
+Layout, recorded so a reader knows where to look: `layout.py` holds every presentation constant
+and is the only module allowed a numeric literal that is not structural; `store.py` loads the
+artifact store once; `predict.py` turns three input values into a prediction with its calibrated
+band, its scalar intervals and its validity verdict; `figures.py` takes data and returns Plotly
+figures; `app.py` wires the five panels and runs the server.
+
+### Binding law 5 is enforced by parsing, with an allowlist of suffixes rather than of values
+
+Build spec 15 says the UI repo contains zero computed constants and that a grep test enforces it.
+A grep cannot do it. `0.9` in a band level and `0.9` in an opacity are the same four characters,
+and both of them appear in a docstring somewhere. So `dash_lint.check_ui_constants` parses every
+module under `src/ufem/ui/` with `ast` and applies two rules:
+
+1. a numeric literal is allowed anywhere if it is `0`, `1`, `2` or `-1`, compared by value so
+   `0.0` and `1.0` count. Those are an index, an arity, a square and a last element. None of them
+   can carry a measurement;
+2. otherwise it is allowed only inside a module level assignment in `ui/layout.py` whose target
+   name ends in one of `PX`, `MS`, `COLOR`, `COLORS`, `OPACITY`, `PAD`, `SIZE`, `STEPS`,
+   `DECIMALS`, `WIDTH`, `HEIGHT`, `FONT`, `DASH`, `MARKER`, `RATIO`, `ROWS`, `COLS`, `CHARS`.
+
+The suffix list is the whole design, and what is missing from it is the part that matters. There
+is no `_SCALE`, because a unit conversion is a statement about the quantity and belongs in
+`ufem.propagate.QOI_DISPLAY` where the report tables read it from. There is no `_THRESHOLD` or
+`_LEVEL` or `_ALPHA`, because a limit state, a confidence level and a band level are results, and
+they come from the configuration and the calibration artifact. A rule that admitted a
+presentational sounding name for those would have been a rule that admits anything.
+
+Two consequences worth recording. The port `8080` is not a presentation constant and is not a
+measurement either, so it lives in `ufem/runner.py` with the rest of the command line defaults,
+and `ui.app.run_lab` takes host and port as required arguments. And `layout.py` imports its
+palette from `ufem.plotting.style` rather than restating it, so the dashboard and the report
+figures are one palette rather than two that were once the same.
+
+Four planted violations prove the check fires: a hard coded `1.6449` in a panel, a
+`PEAK_LOAD_THRESHOLD` in the layout module, a presentation constant declared outside the layout
+module, and a missing UI package, which reports rather than passing vacuously.
+
+### The dashboard recomputes nothing the pipeline has not already stated
+
+This is the rule that shaped every panel, so it is worth stating as one decision rather than five.
+
+The predict panel's curve band is `band_scale * variance_scaling_factor * sigma(u)`, where both
+factors are read out of `calibration.json`; it does not construct a band. Its scalar intervals are
+`ufem.propagate.calibrated_band`, the same deployed jackknife+ construction the reliability numbers
+were counted with, reading the same conformal scores from the same Parquet. Its validity verdict is
+`ufem.validity`, which is the single place that question is decided for the whole project, and a
+test asserts the panel's verdict equals `in_validity_domain` on 32 seeded points. Its censoring
+warning names a quantile bin and a failure count out of `censoring_statistics.json`.
+
+The reliability panel's threshold slider calls `ufem.propagate.recompute_limit_state` on rows the
+propagate stage persisted, and `propagation.json` records what that function says at the configured
+thresholds so the slider can be pinned to an artifact rather than to an expectation.
+
+The one place the dashboard evaluates a model rather than reading a table is the completion
+probability surface, where the fitted classifier is asked for probabilities on a grid. That is the
+same model object the validity domain check uses, loaded from the same pickle whose digest the
+audit artifact records, so what is drawn is what the domain contract is made of.
+
+### The propagate stage gained one output so the threshold slider could exist
+
+Build spec 15 asks the reliability panel for a threshold slider that recomputes a failure
+probability live from the cached Monte Carlo sample. Nothing was cached: the stage held its
+100000 draws in memory and wrote summaries.
+
+Three options. Recompute in the UI, which would have put a Monte Carlo through a Gaussian process
+behind a slider and published a number no manifest covers. Persist all 100000 rows, which at
+the measured compression is about 29 MB of Parquet for a panel. Or persist the seeded
+subsample the stage already draws for its epistemic layer, which is 20000 rows and 5.75 MB,
+exactly the rows the epistemic numbers were computed on, and requires no new randomness at all.
+
+The third was taken. `mc_subsample.parquet` carries the three inputs, the validity domain flag,
+the mean prediction and calibrated sigma of all eleven propagated targets, and the jackknife+ band
+ends for the three limit state targets. Every other output of the stage is bitwise what it was,
+checked against the recorded hashes on the rerun; `propagation.json` gained a `subsample` block and
+nothing else changed in it.
+
+What this costs in honesty and how it is paid: a subsample is not the headline sample, so the
+slider's probability at the configured threshold is 0.0463 where the headline is 0.0479, a gap of
+one standard error of the smaller estimate. The panel says which of the two it is showing on the
+line above the slider, the table above it carries the headline numbers, and a test asserts the two
+agree within three binomial standard errors.
+
+### Pillow assembles the GIF, not ffmpeg
+
+Build spec 15.1 names ffmpeg with a palette pass. ffmpeg is not installed on this machine and is
+not a Python dependency worth acquiring for one figure; Pillow is already in the stack through
+matplotlib. It is now pinned explicitly in the `[dev]` extras, because `scripts/capture_ui_gif.py`
+imports it directly and a direct import that relies on somebody else's dependency is how a build
+breaks when that somebody drops it.
+
+What replaces the two pass palette: one global adaptive palette, median cut to 128 colors,
+quantized from a strided sample of 24 frames pasted into a single strip. Sharing one palette across
+every frame is also what lets Pillow write each later frame as the bounding box of what changed
+rather than as a full image, which is where the compression on a dashboard recording comes from,
+since most of the screen is identical between frames. The measured result is 0.81 MB for 15 seconds
+at 960 px, against a 15 MB ceiling, so nothing about the substitution cost anything that shows.
+
+Two second order effects were measured rather than assumed and are recorded because they change
+the numbers the spec states:
+
+- Pillow merges a run of identical frames into one stored frame and accumulates their delays, so
+  180 captured frames are stored as 93. The playback is unaffected.
+- The GIF format carries a frame delay in hundredths of a second, so a nominal 12 fps interval of
+  83.3 ms is written as 80 ms and the file plays at 12.5 fps. 180 frames therefore play for
+  14.66 s rather than 15.00 s. The script reads the duration back out of the written file and
+  asserts the 12 to 20 second window of build spec 15.1 against what a viewer will actually see.
+
+### The capture is step driven rather than real time
+
+A playwright screenshot costs more than a frame interval, so capturing at wall clock 12 fps would
+either drop frames or slow the interaction to a crawl and record a dashboard nobody would
+recognize. The interaction is scripted as a sequence of steps instead, one screenshot per step,
+played back at the nominal frame rate. The frame budget is written as named constants so it is
+legible, and the duration follows from it by arithmetic rather than from timing luck.
+
+The dataset panel is entered by clicking its tab and then scrolled to the overlay, rather than by
+clicking a point in the scatter matrix. The click through works and is tested through the handler,
+but hitting a specific splom point by pixel coordinate is not stable across renders, and a capture
+that intermittently landed on a failed run and raised a notification would be a flaky committed
+artifact.
+
+### No file size exemption was added, because none was needed
+
+The README GIF was expected to force a documented exemption in `check_file_sizes.py`, since build
+spec 15.1 fixes its frame rate and width and build spec 3.3 caps tracked files at 5 MB. It came out
+at 0.81 MB. An exemption for a file that fits is a 5 MB rule quietly weakened for nothing, so the
+gate is still one rule with no carve outs, and `tests/test_laws.py` asserts the GIF is tracked
+rather than asserting it is exempt. If a future capture crosses 5 MB, that is a decision to make
+then, in a commit that says so.
+
+### The sensitivity panel draws no Sobol bars at all
+
+Build spec 15 panel 3 asks for Sobol bars with uncertainty whiskers and the pointwise stacked band
+along the curve. Every one of the 24 chaos expansions failed the Q2 gate of build spec 12.1 at P6,
+so the honest version of that panel has nothing to put on those axes.
+
+What it shows instead: the gate outcome in the artifact's own vocabulary, the per target Q2 table
+with the number of terms, the explainable variance ceiling and the model free design roughness,
+and a horizontal bar chart of Q2 with the two publication thresholds drawn as rules, so a reader
+can see that every bar falls left of both. That chart is a chart of Q2 values, which are
+measurements of the expansions, not of indices, which are not published.
+
+The Gaussian process posterior Sobol distributions are shown, as intervals rather than as bars
+with whiskers, labeled indicative only in the P6 report's own words, with the chaos against
+posterior agreement plot beside them and its axis labeled as carrying withheld quantities. They
+are shown because a cross check reported only when it agrees is not a cross check.
+
+The functional indices are not drawn. `functional_indices.parquet` exists and both curve blocks
+carry the withheld publication level; a stacked band implies the shares sum to one and are worth
+reading, and neither is established here. The panel says the values are in the artifact for anyone
+who wants to look at what was withheld.
+
+### The reliability panel reads the configured units, and does not convert
+
+The propagated quantities are carried in newtons, millimetres and dimensionless ratios, and the
+limit state thresholds in `configs/pipeline.yaml` are declared in those same units. Converting the
+threshold slider to display units would have meant converting the density it sits on as well,
+because a density transforms by the reciprocal of the scale, and the slider's value would then no
+longer be the number a reader could compare against the config. So the panel stays in the
+propagated units and labels the axis with the target's own name, which carries its unit by
+construction. The scalar readouts on the predict panel do convert, through
+`ufem.propagate.QOI_DISPLAY`, because that is what the report tables do and those two should agree.
+
+### `check_ui_constants` runs in the lint job, not only in the test suite
+
+The check is in `scripts/dash_lint.py` beside the other binding law greps, so the CI lint job on
+Ubuntu runs it with no Python stack at all, and `tests/test_ui.py` imports the same function rather
+than reimplementing it. A law enforced in two places eventually gets enforced two ways.
+
 <!-- BEGIN RESOLVED VERSIONS -->
 
 ### Resolved version matrix, 2026-08-30

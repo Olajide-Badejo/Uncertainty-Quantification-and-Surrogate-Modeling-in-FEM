@@ -63,6 +63,13 @@ DESIGN_DECISIONS = "docs/DESIGN_DECISIONS.md"
 BLOCK_BEGIN = "<!-- BEGIN RESOLVED VERSIONS -->"
 BLOCK_END = "<!-- END RESOLVED VERSIONS -->"
 
+#: The address build spec section 15 names for UFEM Lab. It lives here rather than in the
+#: ``ui`` package because it is a command line default and an environment fact, and because
+#: binding law 5 is enforced over ``src/ufem/ui/`` by a check that admits no numeric literal
+#: which is neither structural nor presentational. A port is neither.
+LAB_HOST = "127.0.0.1"
+LAB_PORT = 8080
+
 
 def repo_root_from_here() -> Path:
     """The repository root, found from this file: ``src/ufem/runner.py`` is three deep."""
@@ -259,6 +266,33 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_lab(args: argparse.Namespace) -> int:
+    """Serve UFEM Lab over the artifact store of the current config (build spec 15).
+
+    The store is loaded before the server starts, so a pipeline that has not run produces a
+    named error here rather than a dashboard with empty panels. Ground rule 8 again: there is
+    no degraded mode where the dashboard opens with three of five panels working.
+    """
+    root = Path(args.repo_root).resolve() if args.repo_root else repo_root_from_here()
+    config = load_config(root)
+    from ufem.ui.app import run_lab
+    from ufem.ui.store import LabArtifactMissing
+
+    print(f"ufem lab: loading the artifact store for config {config_hash(config)[:12]}")
+    try:
+        run_lab(
+            repo_root=root,
+            host=args.host,
+            port=args.port,
+            config=config,
+            show=not args.no_browser,
+        )
+    except LabArtifactMissing as err:
+        print(f"[unavailable] ufem lab: {err}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ufem", description=__doc__.splitlines()[0])
     parser.add_argument("--repo-root", default=None, help="repository root (default: inferred)")
@@ -271,6 +305,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor_parser = sub.add_parser("doctor", help="print and record the resolved environment")
     doctor_parser.set_defaults(func=cmd_doctor)
+
+    lab_parser = sub.add_parser("lab", help="serve UFEM Lab, the dashboard over the artifacts")
+    lab_parser.add_argument("--host", default=LAB_HOST, help=f"bind address (default {LAB_HOST})")
+    lab_parser.add_argument(
+        "--port", type=int, default=LAB_PORT, help=f"port (default {LAB_PORT})"
+    )
+    lab_parser.add_argument(
+        "--no-browser", action="store_true", help="do not open a browser window"
+    )
+    lab_parser.set_defaults(func=cmd_lab)
     return parser
 
 
