@@ -155,6 +155,98 @@ report says so rather than quietly substituting the PC1 number. The methodologic
 spec 7.2 survives on two legs of three, and the third leg was mis specified by me rather than
 disproved by the data.
 
+## Ablation 2: autoencoder plus Gaussian process
+
+**Build spec 10.6.2. Prediction committed 2026-08-31, before
+`scripts/ablation_2_autoencoder.py` existed.**
+
+### What is being compared
+
+The predecessor project's second surrogate architecture, rebuilt honestly, against the
+registered principal component pipeline that ships. Both are measured in the P4 fold harness:
+the same ten grouped folds from the same seed, every representation refitted inside the fold,
+and the same per curve relative L2 on the physical load displacement curve in newtons against
+the displacement grid.
+
+- **Production.** Landmarks, arc length, SRVF registration, principal component analysis on
+  the registered amplitude, the phase and the displacement coordinate, damage reduced on its
+  own, then one Matern 5/2 automatic relevance determination Gaussian process per retained
+  score. Its numbers are read from the `validate` artifact rather than recomputed, because
+  they were measured on exactly these folds.
+- **Ablation.** A pair of small autoencoders on the raw gridded curves, one for force and one
+  for damage, then the same Gaussian process machinery on the latent codes. The damage decoder
+  is the salvaged idea of build spec 6.4 item 7: softplus increments passed through a cumulative
+  sum, so a decoded damage curve is non decreasing by construction rather than by penalty. The
+  terminal renormalization the salvaged file applied after the cumulative sum is deliberately
+  not carried over, because dividing every decoded curve by its own last value forces all of
+  them to end at 1 and destroys exactly the amplitude information the surrogate exists to
+  predict.
+
+Everything the predecessor got wrong about this architecture is corrected rather than
+reproduced: group aware folds instead of augmented children on both sides of a split, a fitted
+noise model on the latent processes instead of a kernel that interpolates its own scatter, and
+the three input feature contract instead of strength and modulus fed in as two features. If
+this ablation loses, it loses on the architecture and not on the malpractice.
+
+The network is small on purpose and the size is stated rather than tuned: 178 training curves
+in a fold cannot support a wide encoder over 201 points. The force autoencoder carries 8 latent
+coordinates, which sits between the 5 amplitude components the production basis retains and the
+23 score quantities it actually predicts to rebuild a force curve, so the ablation is not
+handicapped on budget. The damage autoencoder carries 4, against the 11 the production damage
+basis retains.
+
+### The mechanism I expect to see
+
+An autoencoder learns its basis from data with no prior structure, and at this sample size the
+data cannot pay for that freedom. Principal component analysis on a registered family is the
+same idea with the basis solved in closed form and the phase variation removed first, so it
+spends its degrees of freedom on amplitude alone. The autoencoder has to discover the alignment
+that registration hands the production pipeline for free, from 178 curves, through a nonlinear
+map fitted by gradient descent, and a nonlinear latent space also breaks the property the
+production side leans on hardest: principal component scores are uncorrelated by construction,
+which is what makes independent Gaussian processes on them the right model rather than a
+convenience. Autoencoder latents are not, so the independent processes on them are a modeling
+error the production side does not make.
+
+### Predicted outcome, stated so it can fail
+
+1. **Force curve error.** The autoencoder pipeline's median out of sample relative L2 on the
+   load displacement curve is **higher** than the production pipeline's on the same folds.
+   Direction: ablation strictly worse.
+2. **Peak load.** Out of sample R2 on the peak load read off the decoded curve is **below 0.6**,
+   against 0.72 for the production scalar process. This comparison is asymmetric and I am
+   stating the asymmetry in advance: production predicts the peak with a dedicated Gaussian
+   process on the measured peak, while the autoencoder has no such head and the only peak it
+   offers is the maximum of a decoded curve. That is the architecture's own answer, so it is
+   the one measured, and the asymmetry is reported beside the number.
+3. **Damage curve error.** The monotone decoder's median out of sample relative L2 on the
+   damage curve is **higher** than the production damage reduction's. Direction: ablation
+   strictly worse.
+
+### How I could be wrong
+
+Prediction 1 is the one I am least sure of, and the reason is a number already on the page.
+The P4 baseline table found that at the level of the whole reconstructed curve, all three non
+trivial baselines beat the production pipeline: 22.5 to 23.0 percent median relative L2 against
+23.1 percent for the Gaussian process. Anything that predicts the curve directly avoids the
+compounding the production reconstruction pays for, where an error in a phase or displacement
+score moves the whole abscissa. An autoencoder is a direct curve model in exactly that sense,
+so it could well land under 23.1 percent while still being the wrong model for every reason
+above. If that happens, the honest reading is that the reconstruction path, not the reduction,
+is where the production pipeline leaks, and the finding belongs in the report next to the P4
+caveat rather than being explained away.
+
+Prediction 2 could fail on the other side of the same asymmetry: a curve level model that gets
+the amplitude roughly right can read a decent peak off a smooth decoded curve, and 0.6 is a
+line I picked because it sits well below the production process and well above the 0.37 the
+predecessor's own artifacts recorded for its latent space fit.
+
+Prediction 3 is the safest of the three, because the damage family is nearly degenerate and 11
+linear components describe it to 99 percent of its variance. There is very little for a
+nonlinear encoder to find, and a nonlinear encoder with nothing to find is a nonlinear encoder
+with extra parameters. If it wins here, the monotone decoder is the reason, and that would be a
+result worth carrying into Track B rather than a defeat for the pipeline.
+
 ## Phase P6 prediction: what the functional sensitivity indices should look like
 
 **Build spec 12.3. Prediction committed 2026-08-30, before `src/ufem/sensitivity.py` existed
