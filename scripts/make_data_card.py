@@ -26,6 +26,7 @@ Exit 0 is clean, exit 1 names the failure.
 from __future__ import annotations
 
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -53,6 +54,11 @@ from ufem.grid import STAGE_NAME as GRID_STAGE
 from ufem.ingest import DESIGN_PARQUET
 from ufem.ingest import STAGE_NAME as INGEST_STAGE
 from ufem.manifest import load_manifest, stage_dir
+from ufem.propagate import PROPAGATION_JSON, format_probability
+from ufem.propagate import STAGE_NAME as PROPAGATE_STAGE
+from ufem.propagate import build_analytic_table as build_analytic_fragment
+from ufem.propagate import build_quantile_table as build_quantile_fragment
+from ufem.propagate import build_reliability_table as build_reliability_fragment
 from ufem.reduce import BASIS_JSON, RECONSTRUCTION_JSON
 from ufem.reduce import STAGE_NAME as REDUCE_STAGE
 from ufem.register import LANDMARKS_PARQUET
@@ -71,6 +77,13 @@ from ufem.validate import STAGE_NAME as VALIDATE_STAGE
 #: artifact store under this name, and the report quotes its three metrics.
 ABLATION_1_STAGE = "ablation_1_registration"
 ABLATION_1_JSON = "ablation_1_registration.json"
+
+#: The peak load limit state committed at P0 as a placeholder, superseded at P7 by the
+#: measured characteristic value. It is a historical configuration value rather than a
+#: measurement, so it exists in git history and in the P7 entry of docs/DESIGN_DECISIONS.md
+#: and in no artifact; the report states what it was and how far it was from the value that
+#: replaced it, which needs the old number to be written down exactly once. This is that once.
+PLACEHOLDER_PEAK_THRESHOLD_N = 31000.0
 
 DATA_CARD = "docs/DATA_CARD.md"
 TABLES_DIR = "report/tables"
@@ -158,6 +171,7 @@ def collect(root: Path, config: Config) -> dict[str, Any]:
     validate_dir = stage_dir(artifact_root, VALIDATE_STAGE, digest)
     calibrate_dir = stage_dir(artifact_root, CALIBRATE_STAGE, digest)
     sensitivity_dir = stage_dir(artifact_root, SENSITIVITY_STAGE, digest)
+    propagate_dir = stage_dir(artifact_root, PROPAGATE_STAGE, digest)
     ablation_dir = stage_dir(artifact_root, ABLATION_1_STAGE, digest)
     for directory, stage, how in (
         (register_dir, REGISTER_STAGE, f"ufem run {REGISTER_STAGE}"),
@@ -166,6 +180,7 @@ def collect(root: Path, config: Config) -> dict[str, Any]:
         (validate_dir, VALIDATE_STAGE, f"ufem run {VALIDATE_STAGE}"),
         (calibrate_dir, CALIBRATE_STAGE, f"ufem run {CALIBRATE_STAGE}"),
         (sensitivity_dir, SENSITIVITY_STAGE, f"ufem run {SENSITIVITY_STAGE}"),
+        (propagate_dir, PROPAGATE_STAGE, f"ufem run {PROPAGATE_STAGE}"),
     ):
         if not (directory / "manifest.json").is_file():
             raise ArtifactMissing(
@@ -199,6 +214,9 @@ def collect(root: Path, config: Config) -> dict[str, Any]:
         "calibration": _read_json(calibrate_dir / CALIBRATION_JSON, "calibration result"),
         "sensitivity": _read_json(
             sensitivity_dir / SENSITIVITY_JSON, "global sensitivity result"
+        ),
+        "propagation": _read_json(
+            propagate_dir / PROPAGATION_JSON, "propagation and reliability result"
         ),
         "ingest_manifest": load_manifest(ingest_dir),
         "grid_manifest": load_manifest(grid_dir),
@@ -733,6 +751,115 @@ def build_macro_fragment(data: dict[str, Any], config: Config) -> str:
             4,
         ),
     )
+
+    # Phase P7: propagation and reliability. Every macro below is read from the propagate
+    # stage's own JSON, including the sentence level quantities the report needs in prose, so
+    # the reliability section contains no typed number at all.
+    propagation = data["propagation"]
+    mc = propagation["context"]
+    add("MCSamples", str(int(mc["n_samples"])))
+    add("MCEpistemicSubsample", str(int(mc["epistemic_subsample"])))
+    add("MCPosteriorDraws", str(int(mc["posterior_draws"])))
+    add("MCCurveSubsample", str(int(mc["curve_subsample"])))
+    add("MCBandLevel", _fmt(100.0 * (1.0 - float(mc["band_alpha"])), 0))
+    add("PfFloor", f"10^{{{int(round(math.log10(float(mc['resolvable_pf_floor']))))}}}")
+    add(
+        "OutOfDomainPct",
+        _fmt(100.0 * float(propagation["validity"]["out_of_domain_fraction"]), 1),
+    )
+    add("InsideDomainCount", str(int(propagation["validity"]["n_inside"])))
+    characteristic = propagation["characteristic_value"]
+    add("CharacteristicPeakKN", _fmt(float(characteristic["value_N"]) / 1000.0, 2))
+    add("ConfiguredPeakKN", _fmt(float(characteristic["configured_N"]) / 1000.0, 2))
+    add("CharacteristicGapPct", _fmt(100.0 * float(characteristic["relative_gap"]), 2))
+    add("CharacteristicLevel", _fmt(100.0 * float(characteristic["level"]), 0))
+    add(
+        "PlaceholderPeakGapPct",
+        _fmt(100.0 * abs(PLACEHOLDER_PEAK_THRESHOLD_N / float(characteristic["value_N"]) - 1.0), 1),
+    )
+    add("PlaceholderPeakKN", _fmt(PLACEHOLDER_PEAK_THRESHOLD_N / 1000.0, 2))
+    limit_keys = {
+        "peak_load_below_N": "Peak",
+        "residual_ratio_below": "Residual",
+        "damage_at_10mm_above": "Damage",
+    }
+    for record in propagation["limit_states"]:
+        key = limit_keys[record["config_field"]]
+        n_draws = int(record["n_samples"])
+        add(f"Pf{key}", format_probability(float(record["pf_point"]), n_draws))
+        add(f"Pf{key}SE", _fmt(float(record["pf_standard_error"]), 5))
+        add(f"Pf{key}Bound", format_probability(float(record["pf_conservative"]), n_draws))
+        add(
+            f"Pf{key}Predictive",
+            format_probability(
+                float(record["pf_predictive"]), int(record["n_predictive_draws"])
+            ),
+        )
+        add(
+            f"Pf{key}Inside",
+            format_probability(
+                float(record["pf_inside_domain"]), int(record["n_inside_domain"])
+            ),
+        )
+        add(f"Pf{key}Failures", str(int(record["n_failures"])))
+    roughness = propagation["roughness"]
+    add("PropRoughnessPct", _fmt(100.0 * float(roughness["roughness_ratio"]), 0))
+    add("PropRoughnessPairs", str(int(roughness["n_pairs"])))
+    peak = propagation["targets"]["P_max_N"]
+    add("PropPeakMeanKN", _fmt(float(peak["aleatory"]["mean"]) / 1000.0, 2))
+    add("PropPeakCoV", _fmt(float(peak["aleatory"]["cov"]), 4))
+    add(
+        "PropPeakEpistemicShare",
+        _fmt(float(peak["epistemic_to_aleatory_std"]), 3),
+    )
+    analytic = propagation["analytic"]
+    comparison = analytic["comparison"]
+    add("AnalyticModelErrorPct", _fmt(100.0 * float(comparison["model_error"]), 0))
+    add("AnalyticMedianKN", _fmt(float(comparison["analytic"]["median"]) / 1000.0, 2))
+    add("SurrogateMedianKN", _fmt(float(comparison["surrogate"]["median"]) / 1000.0, 2))
+    add("AnalyticMedianRatio", _fmt(float(comparison["median_ratio"]), 3))
+    add("AnalyticCoV", _fmt(float(comparison["analytic"]["cov"]), 4))
+    add("SurrogateCoV", _fmt(float(comparison["surrogate"]["cov"]), 4))
+    add("AnalyticDispersionRatio", _fmt(float(comparison["dispersion_ratio"]), 3))
+    add("AnalyticLowerRatio", _fmt(float(comparison["quantile_ratio"]["p05"]), 3))
+    add("AnalyticUpperRatio", _fmt(float(comparison["quantile_ratio"]["p95"]), 3))
+    add(
+        "AnalyticCentralVerdict",
+        "brackets" if comparison["central_tendency_brackets"] else "does not bracket",
+    )
+    add(
+        "AnalyticDispersionVerdict",
+        "brackets" if comparison["dispersion_brackets"] else "does not bracket",
+    )
+    for name, key in INPUT_KEYS.items():
+        add(
+            f"AnalyticElasticity{key}",
+            _fmt(float(analytic["analytic_elasticities"][name]), 3),
+        )
+        add(
+            f"CampaignElasticity{key}",
+            _fmt(float(analytic["empirical_elasticities"]["elasticities"][name]), 3),
+        )
+    add("CampaignElasticityRSq", _fmt(float(analytic["empirical_elasticities"]["r2"]), 3))
+    add(
+        "AnalyticTensionElasticity",
+        _fmt(
+            (2.0 / 3.0)
+            * float(analytic["median_inputs"]["Fcm_MPa"])
+            / (float(analytic["median_inputs"]["Fcm_MPa"]) - 8.0),
+            3,
+        ),
+    )
+    add("AnalyticPearson", _fmt(float(analytic["pointwise"]["pearson_on_training_design"]), 3))
+    add(
+        "AnalyticPointwiseBiasPct",
+        _fmt(100.0 * float(analytic["pointwise"]["mean_relative_error"]), 1),
+    )
+    stiffness = analytic["stiffness"]
+    add("AnalyticStiffnessGross", _fmt(float(stiffness["gross_N_per_mm"]) / 1000.0, 2))
+    add("AnalyticStiffnessCracked", _fmt(float(stiffness["cracked_N_per_mm"]) / 1000.0, 2))
+    add("CampaignStiffnessMean", _fmt(float(stiffness["campaign_mean_N_per_mm"]) / 1000.0, 2))
+    add("AnalyticCrackingLoadKN", _fmt(float(analytic["cracking_load_N"]) / 1000.0, 2))
 
     add("ConfigHash", data["config_sha256"][:12])
     add("GridPoints", str(config.pipeline.grid.n_points))
@@ -1300,6 +1427,9 @@ def generate(root: Path) -> dict[str, str]:
         f"{TABLES_DIR}/sensitivity_aggregated.tex": build_aggregated_fragment(
             data["sensitivity"]
         ),
+        f"{TABLES_DIR}/reliability.tex": build_reliability_fragment(data["propagation"]),
+        f"{TABLES_DIR}/propagated_quantiles.tex": build_quantile_fragment(data["propagation"]),
+        f"{TABLES_DIR}/analytic_cross_check.tex": build_analytic_fragment(data["propagation"]),
     }
 
 

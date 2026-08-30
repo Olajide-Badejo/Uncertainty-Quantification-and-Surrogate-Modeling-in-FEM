@@ -36,6 +36,9 @@ GENERATED = (
     f"{TABLES_DIR}/sensitivity_gate.tex",
     f"{TABLES_DIR}/sobol_indices.tex",
     f"{TABLES_DIR}/sensitivity_aggregated.tex",
+    f"{TABLES_DIR}/reliability.tex",
+    f"{TABLES_DIR}/propagated_quantiles.tex",
+    f"{TABLES_DIR}/analytic_cross_check.tex",
 )
 
 

@@ -76,6 +76,11 @@ from ufem.plotting.calibration import (  # noqa: E402
     pit_heatmap,
 )
 from ufem.plotting.censoring import calibration_plot, completion_surface  # noqa: E402
+from ufem.plotting.propagation import (  # noqa: E402
+    analytic_comparison,
+    envelope_fan,
+    qoi_densities,
+)
 from ufem.plotting.registration import (  # noqa: E402
     amplitude_loadings,
     registration_before_after,
@@ -100,6 +105,15 @@ from ufem.plotting.style import (  # noqa: E402
     save_figure,
 )
 from ufem.plotting.surrogate import predicted_vs_actual  # noqa: E402
+from ufem.propagate import (  # noqa: E402
+    ANALYTIC_PARQUET,
+    CURVE_ENVELOPE_PARQUET,
+    DENSITY_PARQUET,
+    LIMIT_STATES,
+    PROPAGATION_JSON,
+    QOI_DISPLAY,
+)
+from ufem.propagate import STAGE_NAME as PROPAGATE_STAGE  # noqa: E402
 from ufem.reduce import BASIS_JSON, fit_basis  # noqa: E402
 from ufem.reduce import STAGE_NAME as REDUCE_STAGE  # noqa: E402
 from ufem.register import (  # noqa: E402
@@ -757,6 +771,80 @@ def main() -> int:
             amplitude_rows["S_Fcm_MPa"].to_numpy(dtype=float),
         ),
         "amplitude_usable_stations": int(len(amplitude_rows)),
+    }
+
+    # ------------------------------------------------------------------
+    # Phase P7: propagation and reliability. Three figures, and every one of them carries the
+    # out of domain mass fraction on its face, because a propagated distribution without that
+    # number beside it is a claim about a population the surrogate only half covers.
+    propagate_dir = _stage(PROPAGATE_STAGE, digest)
+    propagation = json.loads(
+        (propagate_dir / PROPAGATION_JSON).read_text(encoding="utf-8")
+    )
+    density_frame = pd.read_parquet(propagate_dir / DENSITY_PARQUET)
+    envelope_frame = pd.read_parquet(propagate_dir / CURVE_ENVELOPE_PARQUET)
+    analytic_frame = pd.read_parquet(propagate_dir / ANALYTIC_PARQUET)
+    out_of_domain = float(propagation["validity"]["out_of_domain_fraction"])
+    limit_targets = [state.target for state in LIMIT_STATES]
+    thresholds = {
+        record["target"]: float(record["threshold"]) for record in propagation["limit_states"]
+    }
+
+    print("fig_qoi_densities.pdf")
+    save_figure(
+        qoi_densities(
+            density_frame,
+            limit_targets,
+            thresholds,
+            {name: propagation["targets"][name]["label"] for name in limit_targets},
+            {name: QOI_DISPLAY[name][1] for name in limit_targets},
+            {name: QOI_DISPLAY[name][0] for name in limit_targets},
+            out_of_domain,
+        ),
+        OUT / "fig_qoi_densities.pdf",
+    )
+
+    print("fig_curve_envelope.pdf")
+    save_figure(
+        envelope_fan(
+            envelope_frame,
+            "force_N",
+            1.0 / 1000.0,
+            "Reaction force $RF_2$ [kN]",
+            out_of_domain,
+            int(propagation["context"]["curve_subsample"]),
+        ),
+        OUT / "fig_curve_envelope.pdf",
+    )
+
+    print("fig_analytic_comparison.pdf")
+    comparison = propagation["analytic"]["comparison"]
+    save_figure(
+        analytic_comparison(
+            analytic_frame,
+            comparison["surrogate"],
+            comparison["analytic"],
+            1.0 / 1000.0,
+            float(comparison["model_error"]),
+        ),
+        OUT / "fig_analytic_comparison.pdf",
+    )
+
+    RESULTS["propagation"] = {
+        "n_samples": int(propagation["context"]["n_samples"]),
+        "out_of_domain_fraction": out_of_domain,
+        "characteristic_value_N": float(propagation["characteristic_value"]["value_N"]),
+        "limit_states": {
+            record["config_field"]: {
+                "pf_point": record["pf_point"],
+                "pf_conservative": record["pf_conservative"],
+            }
+            for record in propagation["limit_states"]
+        },
+        "analytic_median_ratio": float(comparison["median_ratio"]),
+        "peak_envelope_width_kN": float(
+            (envelope_frame["force_N_p95"] - envelope_frame["force_N_p05"]).max() / 1000.0
+        ),
     }
 
     RESULTS["config_sha256"] = digest
