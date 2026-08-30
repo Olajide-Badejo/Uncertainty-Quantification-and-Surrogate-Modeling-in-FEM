@@ -320,6 +320,82 @@ Prediction 2 is the one I would defend hardest. NLPD punishes a confident mistak
 through the exponent and rewards an honest wide interval only logarithmically, so it is the
 metric on which a model whose variance does not know where the data is loses most clearly.
 
+## Ablation 4: B-spline coefficient regression
+
+**Build spec 10.6.4. Prediction committed 2026-08-31, before `scripts/ablation_4_bspline.py`
+existed.**
+
+### What is being compared
+
+A deliberately interpretable alternative to the functional principal component representation.
+Each curve is projected onto a fixed cubic B-spline basis of 16 functions on the displacement
+grid by ordinary least squares, and one Gaussian process is fitted per coefficient, using the
+same kernel, the same restarts and the same fitted noise model the production score processes
+use. Prediction is a linear combination of basis functions with predicted coefficients, so the
+whole model is readable: a coefficient is the local height of the curve near its knot, and its
+Gaussian process is a statement about how that local height moves with strength and cover.
+
+The knots are placed denser near the peak, and the placement rule is stated here so it is not
+mistaken for tuning. The interior knots sit at the quantiles of a fifty fifty mixture of a
+uniform density over the full 0 to 20 mm stroke and a normal density centered on the training
+folds' median displacement at peak with a standard deviation of 2.5 mm. The mixture is inverted
+numerically on the displacement grid, the peak location is a statistic of the training half of
+each fold and is recomputed inside it, and nothing about the placement is fitted to a held out
+curve.
+
+### The mechanism I expect to see
+
+A B-spline basis with 16 functions has roughly the resolution of the reduced representation and
+none of its structure. Away from the peak the load displacement curve is smooth and slowly
+varying, so a local basis with a Gaussian process per coefficient should track it about as well
+as anything else: the map from three inputs to a local height is smooth and monotone, which is
+the regime every model in this project does well in. That is the sense in which I expect it to
+be competitive pointwise.
+
+The peak is where I expect it to lose, and the reason is that a fixed basis cannot move. In this
+family the displacement at peak has a coefficient of variation of 0.176, so the peak of one
+curve sits where another curve is already softening. A fixed basis has to represent that by
+averaging over neighbouring shapes, which rounds the peak: the reconstruction is flatter through
+the maximum than the curve it came from. Registration exists precisely to remove that variation
+before any basis is fitted, and ablation 1 already measured what the fixed displacement grid
+costs a linear basis, a peak reconstruction bias of -228 N against -60.8 N registered. This
+ablation is the same mechanism seen through a different, more local basis and with a regression
+in front of it.
+
+### Predicted outcome, stated so it can fail
+
+1. **Pointwise competitiveness.** The median out of fold relative L2 is **within 10 percent
+   relative** of the production pipeline's 23.09 percent, that is between about 20.8 and
+   25.4 percent. Direction: comparable, not clearly worse.
+2. **Peak load bias.** The mean signed error of the peak load read off the reconstruction is
+   **negative**, that is the peak is under predicted, and **larger in magnitude** than the
+   production pipeline's on the same folds. Direction: ablation worse on the peak.
+3. **Peak curvature.** The curvature at the peak, measured as the second difference of the
+   predicted curve at the station where it is maximal, is **smaller in magnitude** than the
+   truth's on average, that is the predicted peak is blunter, and the mean absolute curvature
+   error is **larger** than the production pipeline's.
+
+### How I could be wrong
+
+Prediction 1 could fail in the flattering direction. A local basis on the displacement grid with
+one process per coefficient is close to what the linear and nearest neighbour baselines are
+doing, and those already beat the production pipeline at curve level, so this could come out
+clearly better rather than merely competitive. That would be a finding about the reconstruction
+path again, and it would also make prediction 2 more interesting rather than less, because a
+model can be better on the whole curve and still worse where the reliability analysis reads it.
+
+Prediction 3 is the fragile one, and its fragility is in the measurement rather than in the
+mechanism. A second difference on a 0.1 mm grid is a noisy quantity, the peak of a real curve
+in this family is broad, and the station of the maximum can move by several grid points between
+a curve and its prediction without anything being wrong. If the curvature errors come out
+dominated by that station jitter, the honest report is that the metric could not resolve the
+claim, not that the claim held.
+
+Prediction 2 could fail if the coefficient processes happen to over predict amplitude in the
+peak region, which would give a positive bias rather than the negative one I have named. A
+positive bias would be worse than a negative one for a reliability analysis that thresholds the
+peak from below, and I would say so.
+
 ## Phase P6 prediction: what the functional sensitivity indices should look like
 
 **Build spec 12.3. Prediction committed 2026-08-30, before `src/ufem/sensitivity.py` existed
