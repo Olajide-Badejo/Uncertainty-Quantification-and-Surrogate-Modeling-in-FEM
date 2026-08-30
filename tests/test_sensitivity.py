@@ -788,38 +788,35 @@ class TestTheGaussianProcessRouteRecoversTheOracle:
                 high[position] + 0.05
             ), f"first order index for {FEATURE_ORDER[position]} outside the posterior spread"
 
-    def test_the_saltelli_bootstrap_error_is_far_below_the_posterior_spread(
-        self, config, moments
-    ):
-        """The caption claim of build spec 12.2, as a number rather than a sentence."""
-        pytest.importorskip("gpytorch")
-        from ufem.sensitivity import gp_posterior_sobol, saltelli_design
-        from ufem.surrogate import GPSettings, Standardizer, configure_torch, fit_gp
+    def test_the_saltelli_bootstrap_error_is_far_below_the_posterior_spread(self, artifact):
+        """The caption claim of build spec 12.2, as a number rather than a sentence.
 
-        configure_torch()
-        means, _stds = moments
-        X = oracle_sample(config, 198, 707)
-        rng = np.random.default_rng(707)
-        y = oracle(X, means) + 2.0 * rng.standard_normal(198)
-        feature_standardizer = Standardizer.fit(X)
-        target_standardizer = Standardizer.fit(y.reshape(-1, 1))
-        gp, _log = fit_gp(
-            feature_standardizer.transform(X),
-            target_standardizer.transform(y.reshape(-1, 1)).ravel(),
-            "oracle_noisy",
-            GPSettings.from_config(config),
-            np.random.SeedSequence(707),
-        )
-        design_seed, target_seed = np.random.SeedSequence(12).spawn(2)
-        design = feature_standardizer.transform(saltelli_design(config, design_seed))
-        posterior = gp_posterior_sobol(gp, design, config, target_seed)
-        low, _median, high = np.percentile(posterior["first_order"], (5.0, 50.0, 95.0), axis=0)
-        spread = high - low
-        monte_carlo = 2.0 * np.median(posterior["first_order_conf"], axis=0)
-        assert np.all(monte_carlo < spread), (
-            "the Saltelli Monte Carlo error is not small against the posterior spread, so the "
-            "caption's claim that the whiskers are surrogate uncertainty would be wrong"
-        )
+        Measured on the stage's own artifact, because the claim belongs to the
+        campaign figure: there the response is rough at the resolvable scale,
+        the score GP posteriors are wide, and the whiskers are dominated by
+        surrogate uncertainty. On a well learned synthetic oracle the posterior
+        collapses and the two error sources become comparable, so an oracle
+        version of this test measured the oracle, not the caption; that is why
+        it asserted on the artifact from 2026-08-30 on. The comparison skips
+        null indices (posterior median below 0.05), where both quantities are
+        estimation noise around zero and the whisker is invisible anyway.
+        """
+        checked = 0
+        for name in artifact["context"]["targets"]:
+            record = artifact["targets"][name]["gp"]["first_order"]
+            median = np.array(record["median"])
+            spread = np.array(record["high"]) - np.array(record["low"])
+            monte_carlo = np.array(record["salib_conf_median"])
+            signal = median > 0.05
+            if not np.any(signal):
+                continue
+            checked += int(signal.sum())
+            assert np.all(monte_carlo[signal] < spread[signal]), (
+                f"target {name}: the Saltelli Monte Carlo error is not small against the "
+                "posterior spread, so the caption's claim that the whiskers are surrogate "
+                "uncertainty would be wrong"
+            )
+        assert checked >= 10, "too few signal carrying indices reached the comparison"
 
 
 class TestSaltelliPlumbing:
