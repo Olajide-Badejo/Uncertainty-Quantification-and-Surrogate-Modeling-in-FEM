@@ -233,6 +233,26 @@ def fitted(repo_root):
     return SurrogateModel.load(artifact_root, digest)
 
 
+@pytest.fixture(scope="module")
+def surrogate_manifest(repo_root):
+    """The stage's recorded manifest, or a skip when the stage has not run.
+
+    The two tests that read measurements out of the manifest rather than out of the loaded
+    model need the same guard the ``fitted`` fixture gives everything else. They did not have
+    it, so on a clean checkout, which has no artifact store, they raised instead of skipping
+    and took the full CI job red (`docs/DEFECT_LOG.md`, 2026-08-30).
+    """
+    from ufem.manifest import load_manifest
+
+    config = load_config(repo_root)
+    directory = stage_dir(
+        repo_root / config.pipeline.paths.artifact_root, SURROGATE_STAGE, config_hash(config)
+    )
+    if not (directory / "manifest.json").is_file():
+        pytest.skip(f"the surrogate stage has not run for this config hash: {directory}")
+    return load_manifest(directory)
+
+
 class TestTheFittedArtifact:
     def test_the_feature_contract_is_the_pinned_one(self, fitted):
         assert tuple(fitted.metadata["feature_order"]) == FEATURE_ORDER
@@ -312,32 +332,16 @@ class TestTheFittedArtifact:
         assert not np.array_equal(first, third)
         assert first.std(axis=1).mean() > 0.0
 
-    def test_the_fit_budget_of_build_spec_10_3_was_met(self, repo_root):
-        from ufem.manifest import load_manifest
-
-        config = load_config(repo_root)
-        directory = stage_dir(
-            repo_root / config.pipeline.paths.artifact_root,
-            SURROGATE_STAGE,
-            config_hash(config),
-        )
-        extra = load_manifest(directory)["extra"]
+    def test_the_fit_budget_of_build_spec_10_3_was_met(self, surrogate_manifest):
+        extra = surrogate_manifest["extra"]
         assert extra["fit_budget_met"], (
             f"the Gaussian process fits took {extra['gp_fit_wall_time_s']:.1f} s against the "
             f"{extra['fit_budget_s']:.0f} s budget of build spec 10.3. The spec says to stop "
             "and look rather than to widen the budget."
         )
 
-    def test_the_stage_registration_agrees_with_the_reduce_stage(self, repo_root):
-        from ufem.manifest import load_manifest
-
-        config = load_config(repo_root)
-        directory = stage_dir(
-            repo_root / config.pipeline.paths.artifact_root,
-            SURROGATE_STAGE,
-            config_hash(config),
-        )
-        agreement = load_manifest(directory)["extra"]["registration_agreement"]
+    def test_the_stage_registration_agrees_with_the_reduce_stage(self, surrogate_manifest):
+        agreement = surrogate_manifest["extra"]["registration_agreement"]
         assert agreement["loading_max_abs_deviation"] <= agreement["tolerance"]
         assert agreement["mean_max_abs_deviation_N"] <= agreement["tolerance"]
 
@@ -364,3 +368,90 @@ class TestSettingsContract:
             KernelSettings(**{**declared, "restarts": 0})
         with pytest.raises(ValidationError):
             KernelSettings(**{**declared, "lengthscale_bounds": (10.0, 0.05)})
+
+
+class TestTheClosedFormLeaveOneOut:
+    """The algebra that makes 198 folds cost one inverse, against explicit refits."""
+
+    @staticmethod
+    def _problem(n=9, seed=0):
+        from ufem.surrogate import FittedGP, GPSettings
+
+        rng = np.random.default_rng(seed)
+        X = rng.normal(size=(n, 3))
+        y = rng.normal(size=n)
+        settings = GPSettings(
+            nu=2.5, ard=True, lengthscale_bounds=(0.11, 10.0), restarts=1,
+            noise_prior_median_variance=0.1, noise_prior_log_scale=1.5, max_iterations=50,
+        )
+        model = FittedGP(
+            name="toy",
+            parameters=np.array([-1.0, 0.2, 0.3, 0.1, -0.2, 0.0]),
+            train_x=X,
+            train_y=y,
+            settings=settings,
+            marginal_log_likelihood=0.0,
+        )
+        return model
+
+    @staticmethod
+    def _refit(covariance, noiseless, y, mean, drop, query):
+        keep = np.array([k for k in range(y.size) if k not in drop])
+        inverse = np.linalg.inv(covariance[np.ix_(keep, keep)])
+        cross = noiseless[query, keep]
+        return (
+            mean + cross @ inverse @ (y[keep] - mean),
+            covariance[query, query] - cross @ inverse @ cross,
+        )
+
+    def test_the_cross_predictions_reproduce_an_explicit_refit(self):
+        model = self._problem()
+        covariance = model.kernel_matrix()
+        noiseless = covariance - np.eye(covariance.shape[0]) * model.noise()
+        mean = model.constant_mean()
+        means, variances = model.leave_one_out_cross_predictions()
+        for left_out in range(model.train_y.size):
+            for query in range(model.train_y.size):
+                expected_mean, expected_variance = self._refit(
+                    covariance, noiseless, model.train_y, mean, {left_out}, query
+                )
+                assert means[query, left_out] == pytest.approx(expected_mean, abs=1e-9)
+                assert variances[query, left_out] == pytest.approx(expected_variance, abs=1e-9)
+
+    def test_the_diagonal_is_the_dubrule_leave_one_out(self):
+        model = self._problem(seed=2)
+        dubrule_mean, dubrule_variance = model.leave_one_out()
+        means, variances = model.leave_one_out_cross_predictions()
+        np.testing.assert_allclose(np.diag(means), dubrule_mean, atol=1e-10)
+        np.testing.assert_allclose(np.diag(variances), dubrule_variance, atol=1e-10)
+
+    def test_the_nested_leave_one_out_reproduces_explicit_leave_two_out_refits(self):
+        model = self._problem(seed=3)
+        covariance = model.kernel_matrix()
+        noiseless = covariance - np.eye(covariance.shape[0]) * model.noise()
+        mean = model.constant_mean()
+        nested = model.nested_leave_one_out()
+        n = model.train_y.size
+        for held in range(n):
+            for left_out in range(n):
+                if held == left_out:
+                    assert np.isnan(nested["query_mean"][held, left_out])
+                    continue
+                expected_mean, expected_variance = self._refit(
+                    covariance, noiseless, model.train_y, mean, {held, left_out}, held
+                )
+                assert nested["query_mean"][held, left_out] == pytest.approx(
+                    expected_mean, abs=1e-9
+                )
+                assert nested["query_variance"][held, left_out] == pytest.approx(
+                    expected_variance, abs=1e-9
+                )
+                inner_mean, inner_variance = self._refit(
+                    covariance, noiseless, model.train_y, mean, {held, left_out}, left_out
+                )
+                assert nested["inner_mean"][held, left_out] == pytest.approx(
+                    inner_mean, abs=1e-9
+                )
+                assert nested["inner_variance"][held, left_out] == pytest.approx(
+                    inner_variance, abs=1e-9
+                )

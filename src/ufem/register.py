@@ -520,6 +520,13 @@ def _load_grid(root: Path, config: Config, config_sha256: str) -> tuple[Path, di
     return directory, hashes
 
 
+def declared_input_hashes(
+    repo_root: Path | str, config: Config, config_sha256: str
+) -> dict[str, str]:
+    """Hash this stage's declared inputs as they are on disk right now (see ``ufem.runner``)."""
+    return _load_grid(Path(repo_root), config, config_sha256)[1]
+
+
 def run(repo_root: Path | str, config: Config, config_sha256: str) -> Path:
     """Execute the register stage and return its artifact directory."""
     started = _time.perf_counter()

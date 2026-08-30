@@ -506,6 +506,136 @@ class FittedGP:
             )
         return self.train_y - alpha / diagonal, 1.0 / diagonal
 
+    def leave_one_out_cross_predictions(self) -> tuple[np.ndarray, np.ndarray]:
+        """Every leave one out model evaluated at every training point.
+
+        Returns two ``(n, n)`` arrays whose entry ``[j, i]`` is the mean and the predictive
+        variance at ``x_j`` of the model that left ``x_i`` out. The diagonal is exactly what
+        :meth:`leave_one_out` returns, and a test asserts that rather than assuming it.
+
+        Jackknife+ (Barber, Candes, Ramdas and Tibshirani 2021) needs the off diagonal: the
+        interval at a query point is a quantile over the ``n`` leave one out models evaluated
+        **there**, not over their residuals alone. Refitting n models would cost n Choleskys;
+        the same block inverse identity that gives Dubrule's diagonal gives the whole matrix
+        from the one inverse already computed.
+
+        With ``A = K^-1`` on the noisy training covariance, ``r = y - m`` and ``alpha = A r``,
+        dropping row i turns the weight vector into ``beta_i = alpha - A[:, i] alpha_i / A_ii``
+        (whose i-th entry is zero, so the dropped point contributes nothing), and the
+        predictive variance picks up the positive correction ``(A c)_i^2 / A_ii``. Both follow
+        from ``K_{-i,-i}^-1 = A_{-i,-i} - A_{-i,i} A_{i,-i} / A_ii``.
+
+        The hyperparameters are the ones fitted on all n points, the same stated approximation
+        :meth:`leave_one_out` carries, and ``ufem.calibrate`` reports the per fold refit cross
+        check next to it.
+        """
+        covariance = self.kernel_matrix()
+        inverse = np.linalg.inv(covariance)
+        diagonal = np.diag(inverse)
+        if np.any(diagonal <= 0.0):
+            raise ValueError(
+                f"target {self.name!r} has a non positive diagonal in the inverse covariance, "
+                "so the closed form leave one out is not defined. The covariance is not "
+                "positive definite at these hyperparameters."
+            )
+        mean = self.constant_mean()
+        residual = self.train_y - mean
+        alpha = inverse @ residual
+        weights = alpha[:, None] - inverse * (alpha / diagonal)[None, :]
+        noiseless = covariance - np.eye(covariance.shape[0]) * self.noise()
+        means = mean + noiseless @ weights
+        projected = inverse @ noiseless
+        full_variance = np.diag(covariance) - np.einsum(
+            "ij,ji->i", noiseless, projected
+        )
+        variances = full_variance[:, None] + projected.T**2 / diagonal[None, :]
+        if np.any(variances <= 0.0):
+            raise ValueError(
+                f"target {self.name!r} produced a non positive leave one out variance, which "
+                "means the training covariance is numerically indefinite at these "
+                "hyperparameters. No variance is clipped here (ground rule 4)."
+            )
+        return means, variances
+
+    def nested_leave_one_out(self) -> dict[str, np.ndarray]:
+        """The leave one out structure of every leave one out model, for honest evaluation.
+
+        Measuring the coverage of a jackknife+ interval at a training point is only honest if
+        nothing that builds the interval has seen that point's response. The plain cross
+        predictions above do not clear that bar: the model that left ``i`` out still fitted on
+        ``y_j``, so at ``x_j`` it interpolates rather than predicts, and the measured coverage
+        comes out conservative for exactly the targets whose in sample fit is much better than
+        their out of sample fit. Measured on this campaign the gap was 5 to 7 points of
+        coverage on the two weakest quantities of interest, which is not a small correction.
+
+        So this method removes the query point first and then does the whole construction
+        inside what is left. For every held out ``j`` it returns, over the other ``n - 1``
+        points ``i``:
+
+        - ``query_mean[j, i]``, ``query_variance[j, i]``: the model fitted without ``i`` and
+          without ``j``, evaluated at ``x_j``. These center the interval.
+        - ``inner_mean[j, i]``, ``inner_variance[j, i]``: the same model evaluated at ``x_i``,
+          which is the leave one out residual of the reduced problem and gives the
+          nonconformity scores. These size the interval.
+
+        Diagonals are ``nan``: there is no model that left ``j`` out twice. The cost is one
+        inverse for the whole thing plus O(n^2) per held out point, because the reduced inverse
+        ``K_{-j,-j}^-1 = A_{-j,-j} - A_{-j,j} A_{j,-j} / A_jj`` comes from the inverse already
+        computed rather than from a second factorization.
+
+        The hyperparameters remain the ones fitted on all n points; that approximation is the
+        one stated throughout this file, and ``ufem.calibrate``'s per fold refit cross check is
+        what bounds it.
+        """
+        covariance = self.kernel_matrix()
+        n = covariance.shape[0]
+        if n < 3:
+            raise ValueError("the nested leave one out needs at least three training points.")
+        inverse = np.linalg.inv(covariance)
+        if np.any(np.diag(inverse) <= 0.0):
+            raise ValueError(
+                f"target {self.name!r} has a non positive diagonal in the inverse covariance, "
+                "so the closed form leave one out is not defined."
+            )
+        mean = self.constant_mean()
+        residual = self.train_y - mean
+        noiseless = covariance - np.eye(n) * self.noise()
+        query_mean = np.full((n, n), np.nan)
+        query_variance = np.full((n, n), np.nan)
+        inner_mean = np.full((n, n), np.nan)
+        inner_variance = np.full((n, n), np.nan)
+        index = np.arange(n)
+        for held in range(n):
+            keep = index != held
+            column = inverse[keep, held]
+            reduced = inverse[np.ix_(keep, keep)] - np.outer(column, column) / inverse[held, held]
+            diagonal = np.diag(reduced)
+            if np.any(diagonal <= 0.0):
+                raise ValueError(
+                    f"target {self.name!r} has a non positive diagonal in the reduced inverse "
+                    f"covariance with point {held} removed."
+                )
+            alpha = reduced @ residual[keep]
+            inner_mean[held, keep] = self.train_y[keep] - alpha / diagonal
+            inner_variance[held, keep] = 1.0 / diagonal
+            weights = alpha[:, None] - reduced * (alpha / diagonal)[None, :]
+            cross = noiseless[held, keep]
+            query_mean[held, keep] = mean + cross @ weights
+            projected = reduced @ cross
+            full = covariance[held, held] - float(cross @ projected)
+            query_variance[held, keep] = full + projected**2 / diagonal
+        if np.any(query_variance[~np.isnan(query_variance)] <= 0.0):
+            raise ValueError(
+                f"target {self.name!r} produced a non positive nested leave one out variance. "
+                "No variance is clipped here (ground rule 4)."
+            )
+        return {
+            "query_mean": query_mean,
+            "query_variance": query_variance,
+            "inner_mean": inner_mean,
+            "inner_variance": inner_variance,
+        }
+
 
 def fit_gp(
     X: np.ndarray,
@@ -1120,6 +1250,19 @@ class SurrogateModel:
         spec 10.4 prescribes for the bands.
         """
         means, variances = self.predict_scores(X)
+        return self.curve_from_scores(means, variances)
+
+    def curve_from_scores(
+        self, means: dict[str, np.ndarray], variances: dict[str, np.ndarray]
+    ) -> CurvePrediction:
+        """The reconstruction and its propagated variance, given scores from anywhere.
+
+        :meth:`predict_curve` is this function applied to the score GPs' own posterior. The
+        separation exists because build spec 11.2 needs the same reconstruction and the same
+        variance propagation applied to *leave one out* score predictions, and a second copy
+        of the propagation in the calibration stage is exactly how two numbers for one curve
+        band would come about.
+        """
         force_mean = self.basis.reconstruct_force(
             means[BLOCK_AMPLITUDE], means[BLOCK_PHASE], means[BLOCK_DISPLACEMENT]
         )
@@ -1450,6 +1593,13 @@ def _registration_agreement(basis: CurveBasis, reduce_dir: Path) -> dict[str, fl
         "n_components_compared": rank,
         "tolerance": REGISTRATION_AGREEMENT_TOLERANCE,
     }
+
+
+def declared_input_hashes(
+    repo_root: Path | str, config: Config, config_sha256: str
+) -> dict[str, str]:
+    """Hash this stage's declared inputs as they are on disk right now (see ``ufem.runner``)."""
+    return _load_inputs(Path(repo_root), config, config_sha256)[-1]
 
 
 def run(repo_root: Path | str, config: Config, config_sha256: str) -> Path:

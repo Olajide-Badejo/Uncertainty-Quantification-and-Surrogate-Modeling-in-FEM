@@ -478,3 +478,137 @@ gate). `ruff`, `dash_lint.py` and `check_file_sizes.py` clean. `latexmk` builds 
 importance weighting table, unrelated to this phase). The baselines table and the peak load
 predicted against actual figure are both generated from the validate stage's own artifacts,
 never a second computation for the report to show.
+
+## 2026-08-30, Phase P5: conformal calibration, scalar and functional
+
+**Two inherited defects were fixed before the phase's own work started, and one of them was
+mine to find.** `ufem.runner.is_cache_hit` recomputed a stage's cache key from the input hashes
+that stage's own manifest had recorded, which compares a number against a copy of itself and
+agrees no matter what happened upstream. An artifact regenerated or edited after a downstream
+stage ran was served stale unless somebody passed `--force`, which is exactly how a calibration
+stage ends up reading last week's surrogate. Every stage now exposes `declared_input_hashes`,
+the runner hashes the files afresh at check time, and a stage without the declaration raises
+rather than being trusted. `tests/test_runner.py` is red on 3 of 7 cases before the fix and
+green after. The second was found by reading the P4 merge's CI: two tests in
+`tests/test_surrogate.py` read the stage manifest without the fixture that skips when the
+artifact store is absent, so the clean checkout job raised where the other 83 artifact tests
+skipped, and `test-full (ubuntu)` had been red since the P4 merge. Both are in
+`docs/DEFECT_LOG.md` with their evidence.
+
+While that CI failure was being diagnosed it looked like it was hiding a second, real defect:
+the committed surrogate manifest records `gp_fit_wall_time_s = 61.28` against the 60 second
+budget of build spec 10.3, with `fit_budget_met = false`. Refitting the stage on an unloaded
+machine measures 53.95 s, which agrees with the 54.99 s the P4 log recorded. So the budget was
+not systematically exceeded; the stored artifact came from a run that happened to be 14 percent
+slower than the same fit is now. Worth writing down because the assertion is on a wall clock,
+and a wall clock assertion with 14 percent of run to run spread and a 10 percent margin will go
+red again on a busy machine.
+
+**The scalar recalibration is a null result, which is the outcome that argues for the P4 noise
+hyperprior.** The out of fold variance scaling factors over the 11 scalar targets run from
+0.998 to 1.199, and nine of the eleven sit within one percent of unity. Build spec 11.3 expects
+a factor near 1 when the Gaussian process noise fit is honest, and this is that expectation
+measured rather than assumed: the predictive variance adequacy before any scaling is +0.016 or
+better on nine targets. The two exceptions are the knee landmarks, `u_knee_mm` at 1.199 (PVA
++0.362) and `P_knee_N` at 1.105 (PVA +0.199), which are the noisiest quantities in the schedule
+and the two whose extraction the P3 log already recorded as delicate. Nothing was done about
+them beyond reporting them: conformal is valid either way, and a target whose variance is 20
+percent optimistic gets a 20 percent wider conformal quantile automatically.
+
+**The curve variance is too small by nearly a factor of two, and the construction says why.**
+The force curve's scaling factor is 1.793, from a predictive variance adequacy of +1.168. That
+is not a surprise and it is not a defect: `predict_curve` propagates the amplitude score
+variance linearly through the reconstruction, and phase and displacement uncertainty enter that
+reconstruction nonlinearly, so they are absent from the propagated variance by design (build
+spec 10.4 says so and prescribes sampling for the bands). Drawing the configured 256 posterior
+realizations through the full nonlinear reconstruction on 12 curves gives a pointwise spread
+1.23 times the propagated one at the median, 2.34 at the 95th percentile: same direction, same
+order, from an independent route. The damage curve needs almost nothing, 0.972.
+
+**A gate failure that was mine, not the model's.** The first complete run failed the gate on two
+of four headline quantities, and it failed by over covering: 95.5 percent for displacement at
+peak and 96.5 percent for initial stiffness against a nominal 90. The band was not wrong, the
+measurement was. Evaluating a jackknife+ interval at a training point uses n-1 leave one out
+models that were every one of them fitted on that point's response, so at that point they
+interpolate rather than predict, and the effect is largest for exactly the quantities whose in
+sample fit most exceeds their out of sample fit, which is what displacement at peak (LOO R2
+0.281) and initial stiffness (0.297) are. The fix is a nested leave one out: remove the query
+point first, then build the ensemble, the scores and the scaling factor inside what is left.
+The closed form makes it affordable, because the reduced inverse comes from the inverse already
+computed rather than from a second factorization, so 198 nested problems per target cost O(n^3)
+in total and 2.5 seconds for all 11 targets. It is tested against explicit leave two out refits
+on all 56 pairs of a toy design to 1e-9. I record this as a gate that did its job: a threshold
+that only ever passes is not a gate, and the first thing this one caught was an evaluation
+that flattered the model.
+
+**Measured coverage, after that fix.** Every construction lands on 179 of 198 at the 90 percent
+level and 189 of 198 at 95, which is 0.9040 and 0.9545. That is not a coincidence between
+targets: the conformal rank rule returns a fixed count by construction, and the finite sample
+bracket at n = 198 is [0.900, 0.905] and [0.950, 0.955] respectively. The 95 percent Wilson
+interval is [0.855, 0.938] at the 90 percent level, which contains 0.90. The jackknife+ and the
+10 fold CV+ cross check agree to the last digit on all four headline quantities, so the
+hyperparameter reuse caveat build spec 11.1 asks to be stated costs nothing measurable at this
+sample size. The simultaneous functional bands reach the same 0.9040 on both the load
+displacement and the damage families.
+
+**The damage family cannot support a band over most of its domain, and that is the saturation
+finding again.** Standardizing a residual needs a variance, and 84 of the 201 damage stations
+have none: the first 0.4 mm, before damage initiates, and everything past 12.2 mm, where all
+198 runs sit at the same saturated value. The band is calibrated on the 117 stations where the
+family actually varies, the excluded span is recorded in the artifact, and no variance was
+floored to keep the rest, which would have been the fabricated uncertainty of build spec 5.1
+reintroduced through the back door. The load displacement family loses only the origin, where
+displacement control makes the force exactly zero for every run.
+
+**The PIT gate criterion, and how close the uncalibrated model came to failing it.** Build spec
+11.5 words its third criterion visually, no gross U shape on the softening branch, and a visual
+criterion inside a machine checked gate is not a criterion. It is implemented as the fraction of
+PIT values in the outer two deciles over the post peak part of every curve, which a calibrated
+predictive distribution puts at 0.20 by definition. The threshold, 0.35, was written into
+`calibrate.py` before the first measurement was taken and the commit order is the evidence.
+Measured on the force curves: 0.348 before the variance scaling, 0.112 after. The uncalibrated
+model was within a percentage point of failing, and the measured scaling is the whole of what
+moved it. The after value being well below 0.20 rather than at it says the recalibrated
+predictive is now conservative in the tails, which is what matching a mean square on a heavy
+tailed residual field does; it is reported rather than tuned.
+
+**The bands are wide, and the calibration is not why.** The simultaneous 90 percent multiplier
+on the force curves is 5.73, and the median sup norm score is 1.57 against a worst case of 7.08.
+Part of that is the price of simultaneity over 200 abscissae, and the rest is the curve level
+accuracy P4 already reported, where the surrogate loses to three of its four baselines. The
+figure in the report shows the worst run in the campaign deliberately. A band that looked
+comfortable on three cherry picked curves would be a decoration.
+
+**The R cross check of build spec 11.2 was replaced, and the substitution is argued rather than
+assumed.** R is not installed on this machine, and adding an R toolchain for one function call
+would put the check somewhere CI cannot run it, which is how a cross check quietly stops being
+true. `tests/test_conformal_functional.py` replaces it with constructions whose answers are
+computable by hand, where the assertion is exact equality rather than agreement to a tolerance,
+plus two measurements of the guarantee itself: the coverage of the constructed band against the
+exact rank probability k/(n+1) over 40000 replications, and a 500 replication simulation on
+synthetic curve valued data that lands at 0.896 against the finite sample bracket [0.900, 0.925]
+with a standard error of 0.0134. What the substitution gives up, an independent author's reading
+of the same paper, is stated in the test module's docstring.
+
+**Wall times**, from the manifests: the whole calibrate stage is 141.9 s, of which the scalar
+jackknife+ including the nested evaluation of all 11 targets is 2.5 s, the functional bands are
+1.0 s, and the 10 fold CV+ refit is 135.9 s. In other words the entire conformal apparatus this
+phase exists to build costs 3.5 seconds, and 96 percent of the stage is the honest cross check
+that build spec 11.1 asks for. That is the right ratio for a project whose predecessor's
+uncertainty was free and fictional.
+
+**Gates.** 358 tests, up from 315 at P4, all passing including the slow markers. The calibrate
+stage reproduces all nine of its artifacts bitwise on a forced rerun
+(`tests/test_p5_determinism.py`), which matters more here than at P4 because the CV+ cross check
+refits 110 Gaussian processes and the modulation check draws 256 realizations per curve.
+`ruff`, `dash_lint.py` and `check_file_sizes.py` clean. `latexmk` builds `main.pdf` at 20 pages,
+up from 16, with no new overfull or underfull boxes and no undefined references. The two new
+table fragments are generated by the calibrate stage's own table functions and regenerated
+through `scripts/make_data_card.py`, so the byte identity staleness gate covers them.
+
+**What P6 inherits.** A calibrated surrogate whose intervals mean what they say, with the gate
+of build spec 11.5 passed and recorded in the manifest, which is what unblocks the propagation
+of Section 13. The number to carry forward is the curve scaling factor of 1.793: the sensitivity
+stage works on the score processes directly, where the scalars' honest variance applies, but
+anything that reaches for a curve level predictive spread should use the recalibrated one and
+say so.

@@ -5,18 +5,25 @@
 ```
 probabilistic_model.yaml + pipeline.yaml        (one config, Pydantic validated, hashed)
   -> ingest      raw CSVs -> deduplicated, typed Parquet curve store
-  -> audit       400 way validity classification, censoring stats, completion GP classifier
   -> grid        RF2 and DAMAGEC on the common 201 point displacement grid
+  -> audit       400 way validity classification, censoring stats, completion GP classifier
   -> register    landmarks -> arc length -> SRVF elastic registration -> amplitude + warp
   -> reduce      fPCA on registered amplitude and on warp tangent space; scalar QoI table
   -> surrogate   Matern 5/2 ARD GP per retained score and per scalar QoI (CPU, seconds)
-  -> calibrate   closed form LOO jackknife+ conformal (sigma normalized); functional sup norm bands
-  -> validate    fold honest LOO metrics, baselines, ablations, coverage, CRPS, PVA
+  -> validate    fold honest LOO metrics, baselines, ablations; the one harness
+  -> calibrate   closed form LOO jackknife+ conformal (sigma normalized); functional sup norm
+                 bands; coverage, PIT, CRPS, NLPD, PVA; the build spec 11.5 gate
   -> sensitivity sparse LARS PCE (corrected LOO Q2 gate) + GP posterior Sobol + functional indices
   -> propagate   1e5+ MC through calibrated surrogate; limit states; Pf with bounds; analytic cross check
   -> report      figures + tables + LaTeX -> latexmk -> PDF
   -> ui          UFEM Lab dashboard reading the same artifact store
 ```
+
+This is the execution order `ufem.runner.STAGES` declares, and it differs from build spec 7.1
+in two places, both recorded with their reasoning in `docs/DESIGN_DECISIONS.md`: `grid` runs
+before `audit`, because the audit's importance weighting study reweights the QoI table `grid`
+extracts, and `validate` runs before `calibrate`, because the conformal calibration is built on
+out of sample residuals and `validate` is the stage that produces them honestly.
 
 At P0 the runner registers all eleven stages and none of them are implemented. Asking for
 one that has not been built yet gets a `NotImplementedError` naming the phase that will add

@@ -29,7 +29,7 @@ Results are injected here from the artifact manifests at Phase P10. Nothing is c
 | P2 | Audit, censoring model, first compiled report | Complete |
 | P3 | Registration and reduction | Complete |
 | P4 | Gaussian process surrogate, baselines, validation | Complete at this commit: the surrogate beats all four baselines out of sample on the four headline scalar quantities of interest (peak load, displacement at peak, initial stiffness, absorbed energy); on the whole reconstructed curve the three non trivial baselines edge it out, and the table says so |
-| P5 | Conformal calibration, scalar and functional | Not started |
+| P5 | Conformal calibration, scalar and functional | Complete at this commit: the calibration gate of build spec 11.5 passed, with simultaneous 90 percent functional bands and jackknife+ scalar intervals both at 0.9040 leave one out coverage (95 percent Wilson interval [0.855, 0.938], exact finite sample bracket [0.900, 0.905]); the measured out of fold variance scaling is within one percent of 1 for nine of eleven scalars and 1.793 for the load displacement curve |
 | P6 | Sensitivity | Not started |
 | P7 | Propagation and reliability | Not started |
 | P8 | UFEM Lab dashboard | Not started |
@@ -56,13 +56,14 @@ first; if it does not agree with what you expect, nothing downstream is worth re
 
 `ufem run all` walks the stages in order. A stage whose cache key is unchanged prints
 `[cache hit]` and is skipped; `--force` reruns it. Stages that a later phase will implement
-raise with the phase named, so at this commit `run ingest`, `run grid`, `run audit`,
-`run register`, `run reduce`, `run surrogate` and `run validate` do real work and `run all`
-then reports that `calibrate` arrives in P5 and exits nonzero. That is the intended behavior,
-not a failure of the install. The full Gaussian process fit is a single threaded, under 60
-second cost (`ufem run surrogate`); the grouped fold validation harness (`ufem run validate`)
-recomputes the registration and every reduction basis inside each of its 10 folds and costs
-several minutes, per the arithmetic in `docs/DESIGN_DECISIONS.md`.
+raise with the phase named, so at this commit everything from `run ingest` through
+`run calibrate` does real work and `run all` then reports that `sensitivity` arrives in P6 and
+exits nonzero. That is the intended behavior, not a failure of the install. The full Gaussian
+process fit is a single threaded, under 60 second cost (`ufem run surrogate`); the grouped fold
+validation harness (`ufem run validate`) recomputes the registration and every reduction basis
+inside each of its 10 folds and costs several minutes, per the arithmetic in
+`docs/DESIGN_DECISIONS.md`; `ufem run calibrate` costs about two and a half minutes, almost all
+of it the 10 fold CV+ cross check, and it exits nonzero if the calibration gate fails.
 
 Two products of this phase are scripts rather than stages, and both read the artifact store:
 

@@ -43,6 +43,10 @@ from ufem.audit import (
     WEIGHTING_JSON,
 )
 from ufem.audit import STAGE_NAME as AUDIT_STAGE
+from ufem.calibrate import CALIBRATION_JSON, GATE_ALPHA, SIGNAL_DAMAGE, SIGNAL_FORCE
+from ufem.calibrate import STAGE_NAME as CALIBRATE_STAGE
+from ufem.calibrate import build_conformal_table as build_conformal_fragment
+from ufem.calibrate import build_diagnostics_table as build_diagnostics_fragment
 from ufem.config import FEATURE_ORDER, Config, config_hash, load_config
 from ufem.grid import QOI_PARQUET
 from ufem.grid import STAGE_NAME as GRID_STAGE
@@ -147,12 +151,14 @@ def collect(root: Path, config: Config) -> dict[str, Any]:
     reduce_dir = stage_dir(artifact_root, REDUCE_STAGE, digest)
     surrogate_dir = stage_dir(artifact_root, SURROGATE_STAGE, digest)
     validate_dir = stage_dir(artifact_root, VALIDATE_STAGE, digest)
+    calibrate_dir = stage_dir(artifact_root, CALIBRATE_STAGE, digest)
     ablation_dir = stage_dir(artifact_root, ABLATION_1_STAGE, digest)
     for directory, stage, how in (
         (register_dir, REGISTER_STAGE, f"ufem run {REGISTER_STAGE}"),
         (reduce_dir, REDUCE_STAGE, f"ufem run {REDUCE_STAGE}"),
         (surrogate_dir, SURROGATE_STAGE, f"ufem run {SURROGATE_STAGE}"),
         (validate_dir, VALIDATE_STAGE, f"ufem run {VALIDATE_STAGE}"),
+        (calibrate_dir, CALIBRATE_STAGE, f"ufem run {CALIBRATE_STAGE}"),
     ):
         if not (directory / "manifest.json").is_file():
             raise ArtifactMissing(
@@ -183,6 +189,7 @@ def collect(root: Path, config: Config) -> dict[str, Any]:
         "ablation_1": _read_json(ablation_path, "registration ablation"),
         "surrogate": _read_json(surrogate_dir / SURROGATE_JSON, "surrogate record"),
         "baselines": _read_json(validate_dir / BASELINES_JSON, "baselines and validation result"),
+        "calibration": _read_json(calibrate_dir / CALIBRATION_JSON, "calibration result"),
         "ingest_manifest": load_manifest(ingest_dir),
         "grid_manifest": load_manifest(grid_dir),
         "audit_manifest": load_manifest(audit_dir),
@@ -511,6 +518,70 @@ def build_macro_fragment(data: dict[str, Any], config: Config) -> str:
             _fmt(100.0 * float(curve_lookup[model]["test"]["p50"]), 2),
         )
 
+    calibration = data["calibration"]
+    key = f"{GATE_ALPHA:g}"
+    add("CalibrationGatePassed", "passed" if calibration["gate"]["passed"] else "failed")
+    add("CalibrationLevel", f"{100 * (1 - GATE_ALPHA):.0f}")
+    add("CalibrationWilsonLevel", f"{100 * calibration['context']['wilson_level']:.0f}")
+    for signal, signal_key in ((SIGNAL_FORCE, "Force"), (SIGNAL_DAMAGE, "Damage")):
+        band = calibration["functional"][signal]["bands"][key]
+        add(f"Band{signal_key}Coverage", _fmt(band["empirical"], 4))
+        add(f"Band{signal_key}WilsonLow", _fmt(band["wilson_low"], 3))
+        add(f"Band{signal_key}WilsonHigh", _fmt(band["wilson_high"], 3))
+        add(f"Band{signal_key}Scale", _fmt(band["band_scale"], 2))
+        add(
+            f"Band{signal_key}Scaling",
+            _fmt(calibration["functional"][signal]["variance_scaling_factor"], 3),
+        )
+        add(
+            f"Band{signal_key}Stations",
+            str(int(calibration["functional"][signal]["domain"]["n_abscissae"])),
+        )
+    add(
+        "BandDamageExcluded",
+        str(int(calibration["functional"][SIGNAL_DAMAGE]["domain"]["n_excluded"])),
+    )
+    add(
+        "BandDamageEnd",
+        _fmt(calibration["functional"][SIGNAL_DAMAGE]["domain"]["u_max_mm"], 1),
+    )
+    add(
+        "CurvePvaBefore",
+        _fmt(calibration["functional"][SIGNAL_FORCE]["pva_before"], 3),
+    )
+    scalings = [
+        float(record["variance_scaling_factor"]) for record in calibration["scalar"].values()
+    ]
+    add("ScalarScalingMin", _fmt(min(scalings), 3))
+    add("ScalarScalingMax", _fmt(max(scalings), 3))
+    add("ScalarScalingCount", str(len(scalings)))
+    for stage_label in ("before", "after"):
+        add(
+            f"PitOuterMass{stage_label.capitalize()}",
+            _fmt(calibration["pit_softening"][SIGNAL_FORCE][stage_label]["outer_mass"], 3),
+        )
+    add("PitOuterMassMax", _fmt(calibration["gate"]["pit_outer_mass_max"], 2))
+    add("PitOuterMassNominal", "0.20")
+    add(
+        "ModulationRatioMedian",
+        _fmt(calibration["modulation_cross_check"]["ratio_median"], 2),
+    )
+    add("ModulationDraws", str(int(calibration["modulation_cross_check"]["n_draws"])))
+    for target, target_key in (
+        ("P_max_N", "PMax"),
+        ("u_peak_mm", "UPeak"),
+        ("k0_N_per_mm", "KZero"),
+        ("E_abs_Nmm", "EAbs"),
+    ):
+        row = calibration["scalar"][target]["jackknife_plus"][key]
+        add(f"Jack{target_key}Coverage", _fmt(row["empirical"], 4))
+        add(f"Jack{target_key}WilsonLow", _fmt(row["wilson_low"], 3))
+        add(f"Jack{target_key}WilsonHigh", _fmt(row["wilson_high"], 3))
+        add(
+            f"Crps{target_key}Skill",
+            _fmt(calibration["scalar"][target]["crps_skill_after"], 3),
+        )
+
     add("ConfigHash", data["config_sha256"][:12])
     add("GridPoints", str(config.pipeline.grid.n_points))
     add("QuantileBins", str(censoring["n_quantile_bins"]))
@@ -636,6 +707,27 @@ def build_baselines_table(data: dict[str, Any], config: Config) -> str:
     return build_tex_table(
         data["baselines"]["scalar"],
         data["baselines"]["curve"],
+        list(config.pipeline.validation.headline_qoi),
+    )
+
+
+def build_conformal_table(data: dict[str, Any], config: Config) -> str:
+    """The jackknife+ coverage table of build spec 11.1, from the calibrate stage's own code."""
+    calibration = data["calibration"]
+    return build_conformal_fragment(
+        calibration["scalar"],
+        calibration["cv_plus"],
+        list(config.pipeline.validation.headline_qoi),
+        list(config.pipeline.conformal.alphas),
+    )
+
+
+def build_calibration_diagnostics_table(data: dict[str, Any], config: Config) -> str:
+    """The paired diagnostics of build spec 11.4, from the calibrate stage's own code."""
+    calibration = data["calibration"]
+    return build_diagnostics_fragment(
+        calibration["scalar"],
+        calibration["functional"],
         list(config.pipeline.validation.headline_qoi),
     )
 
@@ -1043,6 +1135,10 @@ def generate(root: Path) -> dict[str, str]:
         f"{TABLES_DIR}/importance_weighting.tex": build_weighting_table(data),
         f"{TABLES_DIR}/reduction_summary.tex": build_reduction_table(data),
         f"{TABLES_DIR}/baselines_table.tex": build_baselines_table(data, config),
+        f"{TABLES_DIR}/conformal_scalars.tex": build_conformal_table(data, config),
+        f"{TABLES_DIR}/conformal_diagnostics.tex": build_calibration_diagnostics_table(
+            data, config
+        ),
     }
 
 

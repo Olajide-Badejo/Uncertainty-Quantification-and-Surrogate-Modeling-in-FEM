@@ -259,6 +259,20 @@ def _write_parquet(frame: pd.DataFrame, path: Path) -> Path:
     return path
 
 
+def declared_input_hashes(
+    repo_root: Path | str, config: Config, config_sha256: str
+) -> dict[str, str]:
+    """Hash this stage's declared inputs as they are on disk right now (see ``ufem.runner``).
+
+    The head of the pipeline reads the inherited CSVs rather than another stage's artifacts,
+    so ``config_sha256`` plays no part here; it is in the signature because the runner calls
+    every stage's declaration the same way.
+    """
+    del config_sha256
+    paths = raw_paths(Path(repo_root), config)
+    return {name: sha256_file(_require_file(path, name)) for name, path in paths.items()}
+
+
 def run(repo_root: Path | str, config: Config, config_sha256: str) -> Path:
     """Execute the ingest stage and return its artifact directory.
 
@@ -269,7 +283,7 @@ def run(repo_root: Path | str, config: Config, config_sha256: str) -> Path:
     started = _time.perf_counter()
     root = Path(repo_root)
     paths = raw_paths(root, config)
-    raw_hashes = {name: sha256_file(_require_file(path, name)) for name, path in paths.items()}
+    raw_hashes = declared_input_hashes(root, config, config_sha256)
 
     load = _read_signal(paths["load_displacement_csv"], LOAD_DTYPES, "load displacement CSV")
     damage = _read_signal(paths["damage_evolution_csv"], DAMAGE_DTYPES, "damage evolution CSV")
