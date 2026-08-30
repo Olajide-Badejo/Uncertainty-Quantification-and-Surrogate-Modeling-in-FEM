@@ -49,6 +49,15 @@ from ufem.grid import STAGE_NAME as GRID_STAGE
 from ufem.ingest import DESIGN_PARQUET
 from ufem.ingest import STAGE_NAME as INGEST_STAGE
 from ufem.manifest import load_manifest, stage_dir
+from ufem.reduce import BASIS_JSON, RECONSTRUCTION_JSON
+from ufem.reduce import STAGE_NAME as REDUCE_STAGE
+from ufem.register import LANDMARKS_PARQUET
+from ufem.register import STAGE_NAME as REGISTER_STAGE
+
+#: The registration ablation is a script rather than a stage, but it writes into the same
+#: artifact store under this name, and the report quotes its three metrics.
+ABLATION_1_STAGE = "ablation_1_registration"
+ABLATION_1_JSON = "ablation_1_registration.json"
 
 DATA_CARD = "docs/DATA_CARD.md"
 TABLES_DIR = "report/tables"
@@ -130,6 +139,25 @@ def collect(root: Path, config: Config) -> dict[str, Any]:
                 f"the {stage} stage has no manifest at {directory}. Run `ufem run {stage}` "
                 f"for config {digest[:12]} before generating the data card."
             )
+    register_dir = stage_dir(artifact_root, REGISTER_STAGE, digest)
+    reduce_dir = stage_dir(artifact_root, REDUCE_STAGE, digest)
+    ablation_dir = stage_dir(artifact_root, ABLATION_1_STAGE, digest)
+    for directory, stage, how in (
+        (register_dir, REGISTER_STAGE, f"ufem run {REGISTER_STAGE}"),
+        (reduce_dir, REDUCE_STAGE, f"ufem run {REDUCE_STAGE}"),
+    ):
+        if not (directory / "manifest.json").is_file():
+            raise ArtifactMissing(
+                f"the {stage} stage has no manifest at {directory}. Run `{how}` for config "
+                f"{digest[:12]} before generating the data card."
+            )
+    ablation_path = ablation_dir / ABLATION_1_JSON
+    if not ablation_path.is_file():
+        raise ArtifactMissing(
+            f"the registration ablation has no result at {ablation_path}. Run "
+            "`python scripts/ablation_1_registration.py` before generating the data card: "
+            "the report quotes its three metrics and they must come from the artifact."
+        )
     return {
         "config_sha256": digest,
         "design": _read_parquet(ingest_dir / DESIGN_PARQUET, "LHS design"),
@@ -139,9 +167,17 @@ def collect(root: Path, config: Config) -> dict[str, Any]:
         "completion": _read_json(audit_dir / COMPLETION_JSON, "completion model report"),
         "domain": _read_json(audit_dir / VALIDITY_DOMAIN_JSON, "validity domain"),
         "weighting": _read_json(audit_dir / WEIGHTING_JSON, "importance weighting study"),
+        "landmarks": _read_parquet(register_dir / LANDMARKS_PARQUET, "landmark table"),
+        "bases": _read_json(reduce_dir / BASIS_JSON, "PCA bases"),
+        "reconstruction": _read_json(
+            reduce_dir / RECONSTRUCTION_JSON, "reconstruction error percentiles"
+        ),
+        "ablation_1": _read_json(ablation_path, "registration ablation"),
         "ingest_manifest": load_manifest(ingest_dir),
         "grid_manifest": load_manifest(grid_dir),
         "audit_manifest": load_manifest(audit_dir),
+        "register_manifest": load_manifest(register_dir),
+        "reduce_manifest": load_manifest(reduce_dir),
     }
 
 
@@ -338,6 +374,62 @@ def build_macro_fragment(data: dict[str, Any], config: Config) -> str:
         float(qoi["P_residual_N"].std(ddof=1) / qoi["P_residual_N"].mean()), 3
     ))
 
+    # Phase P3: registration, reduction, and the registration ablation.
+    landmarks = data["landmarks"]
+    reached = landmarks["u85_reached"].to_numpy(dtype=bool)
+    add("LandmarkKneeMean", _fmt(float(landmarks["u_knee_mm"].mean()), 2))
+    add("LandmarkPeakMean", _fmt(float(landmarks["u_peak_mm"].mean()), 2))
+    add("LandmarkPostPeakMean", _fmt(float(landmarks.loc[reached, "u_85_mm"].mean()), 2))
+    add("LandmarkPostPeakMissing", str(int((~reached).sum())))
+
+    blocks = {block["name"]: block for block in data["bases"]["blocks"]}
+    for name, key in (("amplitude", "Amplitude"), ("phase", "Phase"), ("damage", "Damage")):
+        block = blocks[name]
+        add(f"Components{key}", str(int(block["n_retained"])))
+        add(f"Variance{key}", _fmt(100.0 * float(block["variance_explained_by_retained"]), 2))
+        add(f"ReconMedian{key}", _fmt(100.0 * float(block["reconstruction_error"]["p50"]), 2))
+        add(f"ReconP{key}Ninety", _fmt(
+            100.0 * float(block["reconstruction_error"]["p90"]), 2
+        ))
+    add("VarianceTarget", _fmt(100.0 * float(data["bases"]["variance_target"]), 0))
+    add("AmplitudePCOne", _fmt(
+        100.0 * float(blocks["amplitude"]["explained_variance_ratio"][0]), 1
+    ))
+
+    ablation = data["ablation_1"]
+    add("AblationComponentsRegistered", str(int(ablation["components_at_target"]["registered"])))
+    add(
+        "AblationComponentsUnregistered",
+        str(int(ablation["components_at_target"]["unregistered"])),
+    )
+    add("AblationComponentRatio", _fmt(float(ablation["components_at_target"]["ratio"]), 2))
+    add("AblationDerivCorrRegistered", _fmt(
+        float(ablation["derivative_mode_correlation"]["registered"]), 3
+    ))
+    add("AblationDerivCorrUnregistered", _fmt(
+        float(ablation["derivative_mode_correlation"]["unregistered"]), 3
+    ))
+    add("AblationDerivCorrPCOneRegistered", _fmt(
+        float(ablation["derivative_mode_correlation_by_component"]["registered"][0]), 3
+    ))
+    add("AblationDerivCorrPCOneUnregistered", _fmt(
+        float(ablation["derivative_mode_correlation_by_component"]["unregistered"][0]), 3
+    ))
+    add("AblationPeakBiasRegistered", _fmt(
+        float(ablation["peak_load_bias"]["registered"]["mean_signed_error_N"]), 1
+    ))
+    add("AblationPeakBiasUnregistered", _fmt(
+        float(ablation["peak_load_bias"]["unregistered"]["mean_signed_error_N"]), 1
+    ))
+    add("AblationPeakBiasRegisteredPct", _fmt(
+        100.0 * abs(float(ablation["peak_load_bias"]["registered"]["mean_relative_error"])), 2
+    ))
+    add("AblationPeakBiasUnregisteredPct", _fmt(
+        100.0 * abs(float(ablation["peak_load_bias"]["unregistered"]["mean_relative_error"])),
+        2,
+    ))
+    add("AblationRank", str(int(ablation["rank_for_peak_comparison"])))
+
     add("ConfigHash", data["config_sha256"][:12])
     add("GridPoints", str(config.pipeline.grid.n_points))
     add("QuantileBins", str(censoring["n_quantile_bins"]))
@@ -417,6 +509,37 @@ def build_weighting_table(data: dict[str, Any]) -> str:
             f"{_fmt(100.0 * block['mean_shift_relative'], 2)}"
             r"\,\%"
             f" & {_fmt(block['cov_shift'], 4)} \\\\"
+        )
+    lines += [r"\bottomrule", r"\end{tabular}"]
+    return "\n".join(lines) + "\n"
+
+
+def build_reduction_table(data: dict[str, Any]) -> str:
+    """One row per reduction block: components retained, variance, reconstruction error."""
+    blocks = {block["name"]: block for block in data["bases"]["blocks"]}
+    labels = {
+        "amplitude": "Registered amplitude",
+        "phase": "Warp tangent (phase)",
+        "damage": "Damage (unregistered)",
+    }
+    lines = [
+        "% Generated by scripts/make_data_card.py. Do not edit.",
+        r"\begin{tabular}{lrrrr}",
+        r"\toprule",
+        r"Block & Components & Variance & Median error & 90th pct. error \\",
+        r"\midrule",
+    ]
+    for name, label in labels.items():
+        block = blocks[name]
+        error = block["reconstruction_error"]
+        lines.append(
+            f"{label} & {int(block['n_retained'])} & "
+            f"{_fmt(100.0 * float(block['variance_explained_by_retained']), 2)}"
+            r"\,\%"
+            f" & {_fmt(100.0 * float(error['p50']), 2)}"
+            r"\,\%"
+            f" & {_fmt(100.0 * float(error['p90']), 2)}"
+            r"\,\% \\"
         )
     lines += [r"\bottomrule", r"\end{tabular}"]
     return "\n".join(lines) + "\n"
@@ -823,6 +946,7 @@ def generate(root: Path) -> dict[str, str]:
         f"{TABLES_DIR}/quartile_failure_rates.tex": build_quartile_table(data),
         f"{TABLES_DIR}/calibration.tex": build_calibration_table(data),
         f"{TABLES_DIR}/importance_weighting.tex": build_weighting_table(data),
+        f"{TABLES_DIR}/reduction_summary.tex": build_reduction_table(data),
     }
 
 
