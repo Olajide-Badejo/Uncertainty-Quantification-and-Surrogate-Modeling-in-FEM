@@ -325,3 +325,70 @@ class TestTheSharedMetrics:
         curvature = peak_curvature(curve.reshape(1, -1), grid)
         assert curvature.shape == (1,)
         assert curvature[0] == pytest.approx(-2.0, rel=1.0e-6)
+
+
+@pytest.mark.fullstack
+class TestTheReadmeAgreesWithTheArtifacts:
+    """Ground rule 10: a README claim that disagrees with the artifact is a CI failure.
+
+    The same gate the P5 and P7 rows carry, applied to the P9 row. An ablation verdict is
+    exactly the kind of claim that ages badly, because the count of surviving predictions moves
+    the moment any measurement does, and a status row still saying seven of thirteen after one
+    of them flipped would be the README claiming a result the artifacts no longer support.
+    """
+
+    @pytest.fixture(scope="class")
+    def payloads(self, repo_root):
+        from ufem.ablation_table import AblationMissing, load_payloads
+        from ufem.config import config_hash, load_config
+
+        config = load_config(repo_root)
+        try:
+            return load_payloads(
+                repo_root / config.pipeline.paths.artifact_root, config_hash(config)
+            )
+        except AblationMissing as err:
+            pytest.skip(f"the ablations have not been run for this config hash: {err}")
+
+    def test_the_status_row_quotes_the_measured_verdict(self, repo_root, payloads):
+        from ufem.ablation_table import verdict_summary
+
+        # Ablations 2 through 5 only: ablation 1 belongs to phase P3 and its verdict is
+        # already quoted in the P3 section of the report. The row under test is the P9 one.
+        summary = verdict_summary(payloads)
+        phase = [summary[number] for number in (2, 3, 4, 5)]
+        held = sum(record["n_held"] for record in phase)
+        total = sum(record["n_claims"] for record in phase)
+        spline = payloads[4]
+        rows = [
+            line
+            for line in (repo_root / "README.md").read_text(encoding="utf-8").splitlines()
+            if line.startswith("| P9 |")
+        ]
+        assert len(rows) == 1, "the README status table must carry exactly one P9 row."
+        row = rows[0]
+        for value in (
+            f"{held} of the {total} committed claims held",
+            f"{spline['ablation']['peak']['peak_bias_N']:.0f} N",
+            f"{spline['production']['peak']['peak_bias_N']:.0f} N",
+        ):
+            assert value in row, (
+                f"the README P9 status row does not quote {value!r}, which is what the "
+                "ablation artifacts record. Ground rule 10: fix the README, not this test."
+            )
+
+    def test_the_committed_table_fragment_matches_the_artifacts(self, repo_root, payloads):
+        """The seventeenth report fragment, checked against the artifacts it summarizes.
+
+        The data card's staleness gate already regenerates this file and compares bytes. This
+        asserts the relationship rather than the bytes, so a change to the formatting is a
+        regeneration and a change to a number is a failure here as well.
+        """
+        from ufem.ablation_table import build_ablations_table
+
+        committed = (
+            (repo_root / "report" / "tables" / "ablations.tex")
+            .read_text(encoding="utf-8")
+            .replace("\r\n", "\n")
+        )
+        assert committed == build_ablations_table(payloads)
