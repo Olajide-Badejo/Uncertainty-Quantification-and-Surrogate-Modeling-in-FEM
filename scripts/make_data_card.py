@@ -57,9 +57,14 @@ from ufem.reduce import BASIS_JSON, RECONSTRUCTION_JSON
 from ufem.reduce import STAGE_NAME as REDUCE_STAGE
 from ufem.register import LANDMARKS_PARQUET
 from ufem.register import STAGE_NAME as REGISTER_STAGE
+from ufem.sensitivity import SENSITIVITY_JSON
+from ufem.sensitivity import STAGE_NAME as SENSITIVITY_STAGE
+from ufem.sensitivity import build_aggregated_table as build_aggregated_fragment
+from ufem.sensitivity import build_gate_table as build_gate_fragment
+from ufem.sensitivity import build_sobol_table as build_sobol_fragment
 from ufem.surrogate import STAGE_NAME as SURROGATE_STAGE
 from ufem.surrogate import SURROGATE_JSON
-from ufem.validate import BASELINES_JSON, GP_MODEL, build_tex_table
+from ufem.validate import BASELINES_JSON, GP_MODEL, QOI_LABELS, build_tex_table
 from ufem.validate import STAGE_NAME as VALIDATE_STAGE
 
 #: The registration ablation is a script rather than a stage, but it writes into the same
@@ -152,6 +157,7 @@ def collect(root: Path, config: Config) -> dict[str, Any]:
     surrogate_dir = stage_dir(artifact_root, SURROGATE_STAGE, digest)
     validate_dir = stage_dir(artifact_root, VALIDATE_STAGE, digest)
     calibrate_dir = stage_dir(artifact_root, CALIBRATE_STAGE, digest)
+    sensitivity_dir = stage_dir(artifact_root, SENSITIVITY_STAGE, digest)
     ablation_dir = stage_dir(artifact_root, ABLATION_1_STAGE, digest)
     for directory, stage, how in (
         (register_dir, REGISTER_STAGE, f"ufem run {REGISTER_STAGE}"),
@@ -159,6 +165,7 @@ def collect(root: Path, config: Config) -> dict[str, Any]:
         (surrogate_dir, SURROGATE_STAGE, f"ufem run {SURROGATE_STAGE}"),
         (validate_dir, VALIDATE_STAGE, f"ufem run {VALIDATE_STAGE}"),
         (calibrate_dir, CALIBRATE_STAGE, f"ufem run {CALIBRATE_STAGE}"),
+        (sensitivity_dir, SENSITIVITY_STAGE, f"ufem run {SENSITIVITY_STAGE}"),
     ):
         if not (directory / "manifest.json").is_file():
             raise ArtifactMissing(
@@ -190,6 +197,9 @@ def collect(root: Path, config: Config) -> dict[str, Any]:
         "surrogate": _read_json(surrogate_dir / SURROGATE_JSON, "surrogate record"),
         "baselines": _read_json(validate_dir / BASELINES_JSON, "baselines and validation result"),
         "calibration": _read_json(calibrate_dir / CALIBRATION_JSON, "calibration result"),
+        "sensitivity": _read_json(
+            sensitivity_dir / SENSITIVITY_JSON, "global sensitivity result"
+        ),
         "ingest_manifest": load_manifest(ingest_dir),
         "grid_manifest": load_manifest(grid_dir),
         "audit_manifest": load_manifest(audit_dir),
@@ -581,6 +591,148 @@ def build_macro_fragment(data: dict[str, Any], config: Config) -> str:
             f"Crps{target_key}Skill",
             _fmt(calibration["scalar"][target]["crps_skill_after"], 3),
         )
+
+    sensitivity = data["sensitivity"]
+    context = sensitivity["context"]
+    counts = sensitivity["publication_counts"]
+    add("SensTargets", str(len(context["targets"])))
+    add("SensCandidateTerms", str(int(context["pce_candidate_terms"])))
+    add("SensDegree", str(int(context["pce_total_degree"])))
+    add("SensHyperbolicQ", _fmt(float(context["pce_hyperbolic_q"]), 2))
+    add("SensQTwoValues", _fmt(float(context["q2_publish_values"]), 2))
+    add("SensQTwoRankings", _fmt(float(context["q2_publish_rankings"]), 2))
+    add("SensRealizations", str(int(context["gp_realizations"])))
+    add("SensSobolSamples", str(int(context["gp_sobol_samples"])))
+    add("SensDesignRows", str(int(context["gp_design_rows"])))
+    add("SensFourierFeatures", str(int(context["gp_fourier_features"])))
+    add("SensPublishValues", str(int(counts["values"])))
+    add("SensPublishRankings", str(int(counts["rankings"])))
+    add("SensWithheld", str(int(counts["not_published"])))
+    add("SensAgreeRows", str(int(sensitivity["agreement"]["n_rows"])))
+    add("SensAgreeCount", str(int(sensitivity["agreement"]["n_agree"])))
+    diagnosis = sensitivity["agreement"]["diagnosis"]
+    for kind, kind_key in (("first_order", "First"), ("total_order", "Total")):
+        add(f"SensAgree{kind_key}", str(int(diagnosis["by_kind"][kind]["n_agree"])))
+        add(f"SensAgree{kind_key}Rows", str(int(diagnosis["by_kind"][kind]["n_rows"])))
+    for tolerance, tolerance_key in (("0.01", "OnePct"), ("0.05", "FivePct")):
+        add(
+            f"SensAgreeWithin{tolerance_key}",
+            str(int(diagnosis["within_tolerance"][tolerance])),
+        )
+    add("SensInputSlots", str(int(diagnosis["n_input_slots"])))
+    add("SensAdditiveSlots", str(int(diagnosis["n_chaos_additive_slots"])))
+    add("SensPosteriorAdditiveSlots", str(int(diagnosis["n_posterior_additive_slots"])))
+    add(
+        "SensNoInteractionExpansions",
+        str(int(diagnosis["n_chaos_without_interaction_terms"])),
+    )
+    add(
+        "SensChaosInteraction",
+        _fmt(float(diagnosis["chaos_interaction_share_median"]), 3),
+    )
+    add(
+        "SensPosteriorInteraction",
+        _fmt(float(diagnosis["posterior_interaction_share_median"]), 3),
+    )
+    add("SensGapMedian", _fmt(float(diagnosis["median_gap_when_disagreeing"]), 3))
+    add("SensPosteriorWidthMedian", _fmt(float(diagnosis["median_posterior_width"]), 3))
+    q2_values = [
+        float(sensitivity["targets"][name]["pce"]["q2_corrected"])
+        for name in context["targets"]
+    ]
+    add("SensQTwoMax", _fmt(max(q2_values), 3))
+    add("SensQTwoMin", _fmt(min(q2_values), 3))
+    add(
+        "SensPinned",
+        str(
+            sum(
+                1
+                for name in context["targets"]
+                if sensitivity["targets"][name]["pce"]["lengthscale_pinned"]
+            )
+        ),
+    )
+    best = context["targets"][int(max(range(len(q2_values)), key=q2_values.__getitem__))]
+    add("SensQTwoBestTarget", QOI_LABELS.get(best, best).lower())
+    for target, target_key in (
+        ("P_max_N", "PMax"),
+        ("u_peak_mm", "UPeak"),
+        ("k0_N_per_mm", "KZero"),
+        ("E_abs_Nmm", "EAbs"),
+    ):
+        record = sensitivity["targets"][target]["pce"]
+        add(f"SensQTwo{target_key}", _fmt(float(record["q2_corrected"]), 3))
+        add(
+            f"SensCeiling{target_key}",
+            _fmt(float(record["explainable_variance_ceiling"]), 3),
+        )
+        add(
+            f"SensRough{target_key}",
+            _fmt(float(record["design_roughness"]["roughness_ratio"]), 2),
+        )
+    add(
+        "SensRoughFraction",
+        _fmt(
+            100.0
+            * float(
+                sensitivity["targets"]["P_max_N"]["pce"]["design_roughness"][
+                    "closest_fraction"
+                ]
+            ),
+            0,
+        ),
+    )
+    add(
+        "SensRoughSeparation",
+        _fmt(
+            float(
+                sensitivity["targets"]["P_max_N"]["pce"]["design_roughness"][
+                    "separation_cutoff"
+                ]
+            ),
+            3,
+        ),
+    )
+    for block, block_key in (("amplitude", "Amplitude"), ("damage", "Damage")):
+        record = sensitivity["functional"][block]
+        add(f"SensFunc{block_key}Stations", str(int(record["n_usable_stations"])))
+        add(f"SensFunc{block_key}Components", str(int(record["n_components"])))
+        add(f"SensFunc{block_key}Level", record["publication_level"].replace("_", " "))
+        physics = record["physics_check"]
+        add(f"SensFunc{block_key}Crossings", str(int(physics["n_crossings"])))
+        add(f"SensFunc{block_key}Leader", INPUT_MATH[physics["leader"]].split(" [")[0])
+        add(
+            f"SensFunc{block_key}RunnerUp",
+            INPUT_MATH[physics["runner_up"]].split(" [")[0],
+        )
+        add(f"SensFunc{block_key}MinMargin", _fmt(float(physics["min_margin"]), 3))
+        add(f"SensFunc{block_key}MinMarginAt", _fmt(float(physics["min_margin_u_mm"]), 1))
+        add(
+            f"SensFunc{block_key}LeadFirst",
+            _fmt(float(physics["leader_share_at_first_station"]), 3),
+        )
+        add(
+            f"SensFunc{block_key}FirstStation",
+            _fmt(float(physics["first_station_u_mm"]), 2),
+        )
+        add(
+            f"SensFunc{block_key}MaxTotalCBot",
+            _fmt(float(physics["max_total_by_input"]["c_nom_bottom_mm"]), 3),
+        )
+        add(
+            f"SensFunc{block_key}MaxInteraction",
+            _fmt(float(physics["max_interaction_share"]), 3),
+        )
+    add(
+        "SensKernelDeviationMax",
+        _fmt(
+            max(
+                float(sensitivity["targets"][name]["gp"]["kernel_max_abs_deviation"])
+                for name in context["targets"]
+            ),
+            4,
+        ),
+    )
 
     add("ConfigHash", data["config_sha256"][:12])
     add("GridPoints", str(config.pipeline.grid.n_points))
@@ -1138,6 +1290,15 @@ def generate(root: Path) -> dict[str, str]:
         f"{TABLES_DIR}/conformal_scalars.tex": build_conformal_table(data, config),
         f"{TABLES_DIR}/conformal_diagnostics.tex": build_calibration_diagnostics_table(
             data, config
+        ),
+        f"{TABLES_DIR}/sensitivity_gate.tex": build_gate_fragment(
+            data["sensitivity"]["targets"], list(data["sensitivity"]["context"]["targets"])
+        ),
+        f"{TABLES_DIR}/sobol_indices.tex": build_sobol_fragment(
+            data["sensitivity"]["targets"], list(data["sensitivity"]["context"]["headline"])
+        ),
+        f"{TABLES_DIR}/sensitivity_aggregated.tex": build_aggregated_fragment(
+            data["sensitivity"]
         ),
     }
 

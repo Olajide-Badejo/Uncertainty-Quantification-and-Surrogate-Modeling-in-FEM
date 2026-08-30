@@ -573,6 +573,198 @@ predictive standard deviation half of what it should be puts 0.52 there, and
 `tests/test_calibrate.py` asserts that such a field trips the threshold. The threshold was
 committed before the first measurement was taken.
 
+## 2026-08-30, Phase P6: global sensitivity
+
+### The Q2 publication thresholds live in code, not in configuration
+
+Same argument as the calibration gate of P5, and it is worth repeating rather than
+cross referencing because this is the gate that ended up failing. Build spec 12.1 names
+0.95 and 0.80 as the levels at which index values and index rankings may be published. They
+are constants of the specification, not knobs: moving 0.80 to 0.65 does not change how much
+computation the stage spends, it changes what the word published means. A threshold that can
+be edited in a YAML file without a code review is a threshold that gets edited on the day it
+fails, which is precisely the day this one fired. `configs/pipeline.yaml` carries only how much
+computation to spend on the expansion and on the cross check; `Q2_PUBLISH_VALUES` and
+`Q2_PUBLISH_RANKINGS` sit in `src/ufem/sensitivity.py`, and they were committed before the
+first expansion was fitted.
+
+### The corrected leave one out is recomputed here, because OpenTURNS refuses to compute it
+
+`ot.FunctionalChaosValidation` raises `InvalidArgumentException: Cannot perform fast
+cross-validation with a polynomial chaos expansion involving model selection`, and OpenTURNS
+1.27's `FunctionalChaosResult` has no `getRelativeError` accessor at all. Both are correct
+behavior rather than gaps: the fast analytical leave one out assumes a fixed basis, and LARS
+chose the basis using the data, so a naive application of the identity would be optimistic
+without saying so.
+
+The stage therefore writes the identity out itself, in `corrected_leave_one_out`, on the basis
+LARS selected: the closed form residual `(y_i - yhat_i) / (1 - h_ii)`, with the correction
+factor `T(P, n) = n / (n - P) * (1 + trace((Psi^T Psi)^-1))` of Blatman and Sudret 2011. The
+same approximation OpenTURNS refused to hide is stated in the docstring, in the artifact, and
+in the report: the selection is not repeated inside each fold, so the measurement is
+optimistic. For a publication gate that is the safe direction, because it means a target that
+fails the gate would have failed a stricter one too, and every target failed it here. The
+closed form is tested against explicit refits on all 60 folds of a toy design to 1e-9.
+
+### Sensitivity is not fitted on the phase or displacement blocks
+
+The surrogate carries four reduction blocks. Two of them, the phase warps and the displacement
+coordinate along the arc length stations, exist to carry the reparameterization rather than the
+response. A Sobol index on a phase score answers which input moves the abscissa of the
+registered representation, which is a question about the representation and not about the beam,
+and publishing it next to an index on peak load would invite exactly the wrong reading. The
+sensitivity targets are the eight scalar quantities of interest, the five retained amplitude
+scores and the eleven damage scores: 24 expansions.
+
+### Posterior realizations are drawn pathwise, not jointly, and the arithmetic is why
+
+Build spec 12.2 asks for 200 conditional realizations of each Gaussian process posterior,
+evaluated on a Saltelli design. A joint draw at M points is a Cholesky of the M by M posterior
+covariance. At the specification's own N of 2^15 and three inputs the design is
+(3 + 2) * 32768 = 163840 points, so that matrix is 163840^2 float64 values, which is 215
+terabytes. This is not a budgeting question and no reduction of N fixes it: even 2^11 leaves an
+839 MB matrix and a two minute factorization per target, for a design too small to estimate an
+index on.
+
+The realizations therefore come from the decoupled, or pathwise, construction of Wilson and co
+authors (ICML 2020), which is Matheron's update rule written as a function rather than as a
+vector:
+
+    f_post(x) = f_prior(x) + k(x, X) (K + s^2 I)^-1 (y - f_prior(X) - e)
+
+with `e` a draw of the observation noise. The update term is exact and costs one solve of the
+198 by 198 training covariance, which the stage needs anyway. Only the prior path is
+approximated, by a random Fourier feature expansion of the Matern 5/2 spectral density: that
+density is the multivariate Student t with 2 nu = 5 degrees of freedom and scale
+diag(1 / l_d^2), the frequencies are drawn from it, and the feature map pairs a cosine with a
+sine per frequency so the approximation is unbiased in the kernel.
+
+Keeping the update exact is the point of the construction rather than an implementation
+detail. A plain Fourier feature model shows variance starvation, collapsing the posterior
+spread near the training data, and for an index whose entire purpose is to carry the
+surrogate's uncertainty that would be the wrong failure in the wrong direction.
+
+What the approximation costs is measured rather than argued, in three places. The stage records
+the maximum absolute deviation between the feature kernel and the exact kernel on the training
+design, per target, in its manifest. `tests/test_sensitivity.py` asserts the deviation falls as
+features are added and that 4000 pathwise draws reproduce the closed form posterior mean and
+variance at 50 held out points, the variance ratio staying inside [0.9, 1.1] against a sampling
+error of about 2 percent at that draw count. And a second NumPy implementation of the Matern
+5/2 ARD kernel, written because the torch round trip dominates at 163840 query points, is
+asserted against the fitted GPyTorch kernel to 1e-12 rather than trusted.
+
+### Deviation: the Sobol design is 2^13 per realization, not the 2^15 build spec 12.2 names
+
+Measured on this machine over the 24 targets, with 200 realizations each:
+
+| Design size | Sampler | SALib analyses | Per target | 24 targets |
+|---|---|---|---|---|
+| 2^15 = 32768 (163840 rows) | 7.5 s | 19.8 s | 27.4 s | 11.0 min |
+| 2^13 = 8192 (40960 rows) | 1.9 s | 4.9 s | 6.8 s | 2.7 min |
+
+And the reported quantities, on the peak load process:
+
+| Design size | Median S_i | 90 percent interval width | SALib MC half width |
+|---|---|---|---|
+| 2^15 | 0.777, 0.010, 0.166 | 0.137, 0.029, 0.125 | 0.013, 0.002, 0.007 |
+| 2^13 | 0.777, 0.011, 0.166 | 0.136, 0.030, 0.125 | 0.025, 0.005, 0.014 |
+
+The medians and the posterior interval widths agree to three decimals. That is not the
+1/sqrt(N) argument, it is better than it, and the reason is structural: the scrambled Sobol
+design is drawn once and shared by all 200 realizations, so the Saltelli estimator's Monte
+Carlo error is common to them rather than spread between them. It shifts every realization's
+index together instead of inflating the spread, and at this N the shift is under a thousandth.
+Quadrupling the design would move no digit this project reports and would put the whole
+pipeline over the 30 minute gate of build spec section 2, which the 10 minute fold harness of
+P4 already makes tight. The reduction is taken deliberately, with the numbers above as the
+evidence, and `configs/pipeline.yaml` carries both the setting and the reason.
+
+### The functional indices are one matrix product, and the identity is tested
+
+The registered amplitude family is `f(s; x) = m(s) + sum_k phi_k(s) c_k(x)`, and only the
+scores depend on the inputs. Each score has its own chaos expansion `c_k = sum_a A[k, a]
+Psi_a`, so substituting and exchanging the sums gives the field its own expansion at every
+station, with coefficients `B = A @ phi`. The pointwise variance decomposition then follows
+from orthonormality of the chaos basis: the partial variance of an input set at a station is
+the sum of `B[a, s]^2` over the multi indices supported on exactly that set.
+
+Two alternatives were available and both are worse. Sampling the fitted expansions on a
+Saltelli design per station would be 201 Sobol analyses per block for a quantity that is
+available in closed form. Fitting one expansion per station directly on the observed curves
+would be 201 fits on 198 points each, and would throw away the reduction the pipeline exists to
+build. The chosen route is exact given the score expansions, needs no assumption that the
+scores are independent (only that they share the input distribution, with cross terms handled
+by squaring the sum rather than summing the squares), and costs one matrix product.
+
+It also comes with a free consistency check. Because the principal component loadings are
+orthonormal as well, summing the pointwise partial variance over the stations is exactly the
+sum of the per component partial variances, which is the eigenvalue weighted generalized index
+of Lamboni, Monod and Makowski 2011. So the stacked band figure and the aggregated table are
+two views of one decomposition rather than two calculations that happen to agree, and
+`tests/test_sensitivity.py` asserts the identity to a relative 1e-10 on synthetic loadings.
+The stage also records it on the real blocks in its own artifact.
+
+### Two aggregation weightings, because they answer different questions
+
+Lamboni weights each component's index by that component's eigenvalue. The stage reports two
+weightings: the variance each expansion explains, which is the weighting for which the
+aggregate equals the integral of the pointwise partial variance, and the component's own
+empirical variance, which is the literal construction. They differ by exactly the share of each
+component that its expansion failed to explain, so the gap between the two columns is a
+statement about Q2 rather than about the physics, and it is worth having on the page next to a
+gate that Q2 decided.
+
+### Two diagnostics were added that build spec 12 does not ask for
+
+When every one of 24 expansions fails a validity gate, the next question is whether the
+expansions are the problem or the campaign is, and nothing in build spec 12 distinguishes
+those. Two measurements do, and both are reported unconditionally because neither is a
+statement about the beam:
+
+- **The explainable variance ceiling.** The surrogate's Gaussian processes fit a nugget
+  alongside the kernel, and in standardized units the two account for the whole variance, so
+  `outputscale / (outputscale + nugget)` is an independent model family's estimate of the
+  ceiling on any smooth metamodel's Q2.
+- **The design roughness.** For every training point, the nearest neighbour in the standardized
+  input space; over the closest tenth of those pairs, the median absolute response difference
+  as a share of the response standard deviation. Model free, and the more direct of the two.
+
+Neither is a second gate. Nothing is published because of them and no threshold moves because
+of them. They exist so that a failed Q2 can be diagnosed in writing, which is what build spec
+12.2 demands of a disagreement and what honesty demands of a gate that stops the phase.
+
+### Withheld prints as a dash, and the figures say so on their face
+
+Build spec 12.1 says that below 0.80 the indices are not published. A table cell showing the
+number in grey would still be a number a reader can quote, so the generated fragments print
+`{--}` for every withheld value and carry the publication level in its own column. The figures
+were harder, because the deliverable list asks for a Sobol bar chart and a stacked band figure
+and both would necessarily put the withheld numbers on an axis.
+
+The decision, recorded here per build spec section 24 because the specification does not cover
+it: the figures ship, with every withheld panel hatched and labeled on the figure itself and
+the caption stating that nothing on it is a published index. The reason is that the agreement
+between the two constructions is a methodological claim about the pipeline rather than an index
+value, and it is the evidence that the gate fired because the campaign is rough rather than
+because one of the two routes is broken. A figure whose every bar is hatched and whose caption
+says withheld cannot be misread as a result; a phase that produced no figure at all would have
+suppressed the evidence for its own conclusion.
+
+The aggregated table follows the same rule, taking the weakest publication level over the
+components of its block rather than an average of them. An aggregate is not more trustworthy
+than its worst part.
+
+### The pathwise chunk size is part of the artifact contract
+
+`PathwiseSampler` evaluates its query points in chunks so the feature matrix stays near 130 MB.
+BLAS chooses its blocking from the shape of the matrices it is handed, so a 4096 by 4096
+product and a 37 by 4096 product sum their inner dimension in different orders and land about
+3e-15 apart on a value of order one. That is float64 associativity rather than a seeding
+defect, but it means the chunk size is not a free implementation detail: changing
+`PATHWISE_CHUNK` changes the last bits of the stage's outputs and therefore its manifest
+hashes. `tests/test_p6_determinism.py` asserts agreement at round off across chunk sizes and
+bitwise identity at a fixed one, and this paragraph is why the constant has a docstring.
+
 <!-- BEGIN RESOLVED VERSIONS -->
 
 ### Resolved version matrix, 2026-08-30

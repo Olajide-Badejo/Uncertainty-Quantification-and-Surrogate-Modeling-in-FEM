@@ -612,3 +612,160 @@ of Section 13. The number to carry forward is the curve scaling factor of 1.793:
 stage works on the score processes directly, where the scalars' honest variance applies, but
 anything that reaches for a curve level predictive spread should use the recalibrated one and
 say so.
+
+## 2026-08-30, Phase P6: global sensitivity, and a gate that stopped the phase
+
+**The headline is that nothing was published.** All 24 sparse chaos expansions failed the
+corrected leave one out Q2 gate of build spec 12.1. The best of them reaches 0.688 on peak
+load, the second best 0.631 on the leading amplitude score, and the remaining 22 sit between
+-0.015 and 0.421. The threshold to publish a ranking is 0.80 and to publish values 0.95. So no
+Sobol index value and no input ranking leaves this campaign, and what the phase publishes
+instead is the measurement that decided it plus a diagnosis of why.
+
+The Q2 values are not an artifact of my implementation and the cross check that says so was
+already in the repository. The P4 fold honest harness measured out of sample R2 for the same
+quantities under an entirely different model: 0.726 for peak load, 0.281 for displacement at
+peak, 0.297 for initial stiffness, 0.445 for absorbed energy, against chaos Q2 of 0.688, 0.145,
+0.231 and 0.421. The chaos expansion lands where the Gaussian process landed, a little below it
+as a simpler model should, and comfortably above the quadratic chaos baseline of P4 (0.666,
+0.071, 0.158, 0.401) as a degree 5 sparse basis should. Three independent fits agree about how
+predictable this campaign is, and the answer is: not very.
+
+**Why, measured two ways.** Neither measurement is about the expansion.
+
+The first reuses the surrogate's own noise fit. In standardized units the fitted nugget and the
+kernel outputscale account for the whole target variance, so `outputscale / (outputscale +
+nugget)` is what an entirely different model family concluded the three inputs determine. For
+the four headline quantities that ceiling is 0.894, 0.504, 0.566 and 0.695. Three of the four
+expansions are already at or near their own ceiling. A richer basis has nothing to reach for.
+
+The second is model free and it is the one I would put in front of somebody who does not want
+to hear about metamodels. Take each of the 198 training points, find its nearest neighbour in
+the standardized input space, keep the closest tenth of those pairs, which are separated by at
+most 0.185 in standardized units against fitted correlation lengths of 0.66 to 10. The median
+absolute difference in peak load between those nearly coincident designs is 0.393 times the
+peak load standard deviation over the whole campaign. For displacement at peak it is 0.695 and
+for initial stiffness 0.557. Two beams differing by a fraction of a millimetre of cover and a
+fraction of a megapascal of strength produce responses differing by a large share of the entire
+campaign's spread. The response surface varies on a scale finer than this design resolves. No
+smooth metamodel of any family certifies against that, and the Q2 gate is reporting it
+faithfully.
+
+The likely cause is the pair of modeling defects the build spec named in section 6.2 before any
+of this was measured: tension softening left unregularized by a fracture energy while the
+strength varies sample to sample, and no mesh convergence study. Under that combination the
+localization pattern is free to jump between neighbouring designs. I want to be careful here,
+because this is an inference and not a measurement: what is measured is that the response is
+rough at the design's resolution, and what is inferred is why. Track B's first two items are
+exactly the corrections that would test the inference, and this phase is the strongest
+quantitative argument the project has for spending that solver time.
+
+**A diagnostic that needed a caveat of its own.** The explainable ceiling is meaningless where
+the Gaussian process fit is itself degenerate, and on 10 of the 24 targets it is: those
+processes drove at least one length scale onto its configured lower bound with a nugget near
+zero, which is the interpolate the scatter corner of build spec 5.2 and reports a ceiling near
+one for a target nothing can predict. Every one of the ten is a trailing principal component
+carrying almost no variance. Their ceilings are withheld from the table rather than printed,
+and the flag is computed rather than eyeballed. I nearly shipped that column without the
+caveat, which would have put four rows reading "ceiling 0.99, Q2 0.00" in a report as though
+they meant something.
+
+**The two constructions do not agree, and that is the same finding again.** Build spec 12.2
+makes agreement the acceptance criterion. The analytic chaos index falls inside the Gaussian
+process posterior 90 percent interval on 45 of 144 index rows. Investigated, in the order I
+investigated it:
+
+1. *Not the pathwise approximation.* Raising the Fourier feature count from 1024 to 16384, which
+   more than halves the measured kernel deviation, moves the posterior median first order index
+   for peak load by 0.004 and for initial stiffness by 0.023, against gaps to the chaos value of
+   0.11 and 0.31. Ruled out.
+2. *Mostly structural.* Least angle regression selected no interaction term at all on 16 of the
+   24 expansions, so the chaos total index equals the chaos first order index exactly on 53 of
+   72 input slots and the median chaos interaction share is 0.000. A Gaussian process
+   realization is a generic rough function whose interaction is never exactly zero: 0 of 72
+   slots, median interaction share 0.312. Two model families that disagree about whether the
+   response is additive disagree about total indices whatever the data says, and the counts show
+   exactly that shape: first order indices agree on 32 of 72 rows, total indices on 13 of 72.
+3. *Partly a boundary technicality.* Where the expansion drops an input the chaos index is
+   exactly zero while the posterior interval for a negligible input starts just above zero, so
+   the two differ by a thousandth and containment records a miss. A tolerance of 0.01 raises the
+   count to 66 of 144 and 0.05 raises it to 85.
+4. *The rest is real.* Two models neither of which reaches Q2 0.80 attribute the explained part
+   of the variance differently, and there is no reason they should not. Agreement does not
+   improve with Q2 (Spearman -0.098), because none of the expansions is in the regime where it
+   would. The posterior mean's indices, computed only as a diagnostic because build spec 12.2
+   is right that they are biased, sit between the realizations and the chaos values on initial
+   stiffness (0.765 against 0.636 and 0.942), which is the smoothing bias the spec warns about
+   showing up exactly where it was predicted to.
+
+I considered whether the containment criterion is simply too strict, since the chaos index has
+no interval of its own. It is strict, and that is why the gap ladder is reported beside the
+count rather than instead of it. What I did not do is relax the criterion after seeing the
+result.
+
+**The functional indices, and a prediction I could not decide.** The prediction of build spec
+12.3, five falsifiable statements, was committed to `docs/ABLATIONS.md` in commit `0ebc224`,
+before `src/ufem/sensitivity.py` existed in commit `8788ced`. Measured: the leading and second
+ranked inputs swap 0 times over the 200 usable stations. The concrete strength leads everywhere,
+already at 0.931 of the variance at the first station the decomposition exists at (0.03 mm), and
+the top cover comes no closer than 0.167 behind, at 13.7 mm on the softening branch. That
+refutes prediction one on direction and on location at once. Predictions four and five hold: the
+bottom cover's total index never exceeds 0.0012 against a predicted 0.10, and the interaction
+share never exceeds 0.006 against a predicted 0.15.
+
+And none of that decides anything, because the expansions those indices come from are the ones
+the gate withheld. A prediction cannot be decided against evidence the same report declines to
+publish. The report says the prediction is undecided on this campaign and states the direction
+the withheld numbers ran, and `docs/ABLATIONS.md` keeps the prediction unedited. This is the
+first time in this project that the honest answer to "did the prediction hold" has been "the
+measurement is not admissible", and I would rather write that than quietly promote a withheld
+number because it happens to be interesting.
+
+**Deviation taken: the Sobol design is 2^13 per realization, not 2^15.** Measured on this
+machine over 24 targets and 200 realizations each, 2^15 costs 11.0 minutes and 2^13 costs 2.7,
+and the two produce index medians and 90 percent interval widths that agree to three decimals.
+The reason is structural rather than lucky: the scrambled Sobol design is drawn once and shared
+by all 200 realizations, so the Saltelli Monte Carlo error is common to them rather than spread
+between them, and it shifts every realization together instead of widening the reported
+interval. Quadrupling the design would move no reported digit and would put the pipeline over
+the 30 minute gate of build spec section 2. Recorded with both measurements in
+`docs/DESIGN_DECISIONS.md`.
+
+**Two library traps, both now tests.** `SALib.sample.sobol` is not an attribute of
+`SALib.sample` until the submodule is imported, which is SALib issue 663 and the gotcha build
+spec 12.2 warns about; the test checks it in a fresh interpreter so the module cache cannot hide
+it. And `ot.FunctionalChaosValidation` raises `InvalidArgumentException: Cannot perform fast
+cross-validation with a polynomial chaos expansion involving model selection`, while OpenTURNS
+1.27's `FunctionalChaosResult` has no `getRelativeError` at all. Both are correct refusals, so
+the corrected leave one out is written out in this stage with its approximation stated, and it
+is tested against explicit refits on every fold of a toy design to a relative 1e-9.
+
+**The oracle.** This phase is the first with a genuine one. An additive plus one interaction
+polynomial in the three inputs has closed form Sobol indices from the marginal moments alone,
+including a third input whose first order index is exactly zero and whose total index is not,
+which is the asymmetry a symmetric test function would not catch. The chaos route recovers those
+indices to better than 1e-12 against a required 1e-6, and its Q2 comes out at 1.0 because the
+function is exactly in the span of the candidate basis. The Gaussian process route recovers them
+inside its own posterior interval. After four phases of property tests standing in for an
+absent oracle, having one is a relief.
+
+**Wall times**, from the manifests: sensitivity 193.6 s, of which the 24 chaos expansions are
+0.13 s, the functional decomposition 0.49 s, and the 200 posterior realizations per target on a
+40960 point Saltelli design 190.7 s. In other words the primary construction of build spec 12.1
+costs a tenth of a second and 98.5 percent of the stage is the cross check that says it is not
+an implementation error. Full pipeline, ingest through sensitivity: 995 s, about 16.6 minutes,
+inside the 30 minute gate of build spec section 2 with 582 s of that being the P4 fold harness.
+
+**Gates.** 421 fast tests, up from 375 at P5, plus the slow markers. `ruff`, `dash_lint.py` and
+`check_file_sizes.py` clean over 218 tracked files. The sensitivity stage reproduces all seven
+of its artifacts bitwise on a forced rerun. `latexmk` builds `main.pdf` at 27 pages, up from 20,
+with no new overfull or underfull boxes and no undefined references. Three new generated table
+fragments joined the byte identity staleness gate, and one of them, `sobol_indices.tex`, is
+entirely dashes, which is what the gate firing looks like in a report.
+
+**What P7 inherits.** Nothing it can use, which is the point. There is no published sensitivity
+ranking to prioritize a limit state with, and the propagation stage should not invent one. What
+it does inherit is a number worth carrying: the response is rough at the scale this design
+resolves, by a median of 39 percent of the peak load standard deviation between nearest
+neighbours, so any failure probability computed from a smooth surrogate of this campaign carries
+that roughness as an unmodeled error and the report has to say so next to the Pf.

@@ -154,3 +154,147 @@ right though modest. It is not supported by the spurious mode check as I defined
 report says so rather than quietly substituting the PC1 number. The methodological claim of
 spec 7.2 survives on two legs of three, and the third leg was mis specified by me rather than
 disproved by the data.
+
+## Phase P6 prediction: what the functional sensitivity indices should look like
+
+**Build spec 12.3. Prediction committed 2026-08-30, before `src/ufem/sensitivity.py` existed
+and before a single index had been computed.** This is not an ablation, it is a prediction
+about a result, and ground rule 12 makes no distinction between the two: the commit that
+carries this text is older than the commit that carries the numbers, and `git log` is the
+evidence.
+
+### What is being predicted
+
+Build spec 12.3 asks for pointwise first order indices `S_i(u)` and total indices `T_i(u)`
+along the response, computed on the registered amplitude curves, and it states the expected
+physics in one sentence: covers dominating the service range stiffness, and the concrete
+strength taking over near the peak and through softening. That sentence is the thing under
+test here, and it is worth being precise about it before the picture exists, because a
+stacked band figure is exactly the kind of output a reader will nod at whatever it shows.
+
+### What is already measured, and therefore not a prediction
+
+Three numbers from earlier phases constrain the answer and I am not going to claim credit for
+them. The audit measured the peak load correlating with the concrete strength at Pearson 0.80,
+with the top cover at 0.24, and with the bottom cover at -0.14; the initial stiffness
+correlates with the top cover at 0.50 and much less with the strength. So the endpoints of the
+story are known: strength governs the peak, geometry governs the elastic slope. What is not
+known, and what this phase produces for the first time, is the whole curve between them, the
+crossover location, and how much of the variance is interaction rather than main effect.
+
+### The mechanism I expect to see
+
+Early in the response the member is uncracked or barely cracked and the section is responding
+elastically. Its stiffness is set by the second moment of area of the transformed section,
+which is a geometry quantity: where the two reinforcement layers sit changes the lever arm
+directly, while the concrete modulus enters only through the Eurocode 2 exponent of 0.3 on
+strength, so a ten percent strength change buys about a three percent modulus change. The
+covers, and the top cover in particular, should therefore dominate the first few tenths of the
+curve. As the tension zone cracks and the section works toward its capacity the compressive
+strength becomes the binding quantity, both directly through the concrete damaged plasticity
+compression card, which is scaled by `fcm/28`, and indirectly through the tension card, which
+is scaled by `((fcm-8)/20)^(2/3)`. Through the peak and into softening the strength should
+therefore dominate. Bottom cover should be close to irrelevant throughout: it moves a small
+lever arm on the layer that is in tension over most of this member's span, and the surrogate
+already told us so, with an automatic relevance determination lengthscale for that input
+pinned at the top of its allowed range on the peak load process.
+
+### Predicted outcome, stated so it can fail
+
+1. **Crossover exists and runs in the stated direction.** There is a displacement below which
+   `S_ctop(u) > S_Fcm(u)` and above which `S_Fcm(u) > S_ctop(u)`, and the crossover happens
+   before the peak rather than after it. Direction: top cover leads early, strength leads late.
+   This is the sentence of spec 12.3 and it is the one that matters.
+2. **The crossover is early.** I expect it in the first quarter of the response, below about
+   3 mm of the 20 mm stroke, because the family cracks early: the knee landmark sits at a
+   median well under 2 mm. Stated as a number so it can be wrong: crossover displacement
+   below 5 mm.
+3. **Strength dominance at and after the peak is large, not marginal.** `S_Fcm(u)` exceeds
+   0.6 at the peak station and stays above 0.5 through the softening branch.
+4. **Bottom cover is negligible everywhere.** `T_cbot(u) < 0.10` at every station.
+5. **Interaction is a minority effect on the amplitude block.** Aggregated over the amplitude
+   components, the sum of first order indices is above 0.85, that is the interaction share is
+   under 0.15. The three inputs enter the material card through separate mechanisms and the
+   design is close to orthogonal, so a strongly interacting response would be a surprise.
+
+### How I could be wrong
+
+The first way is that there may be no clean early station to read at all. Force is exactly
+zero at the origin for every run because loading is displacement controlled, so the variance
+there is zero and the indices are 0/0. The pointwise indices only exist where the family
+actually varies, which is the same finding the P5 band domain ran into. If the crossover sits
+inside that degenerate span I will not be able to see it, and the honest report of that is
+that the measurement cannot resolve the prediction rather than that the prediction held.
+
+The second is the abscissa. These indices are computed on the registered amplitude functions,
+which live on an arc length parameter, not on displacement, and the mapping back to a physical
+axis is through the mean displacement coordinate. Registration is what makes the indices
+measure amplitude rather than phase, and that is the whole reason spec 12.3 insists on it, but
+it also means the early part of the registered abscissa is not exactly the early part of any
+one physical curve. If the crossover lands near a station where the mean displacement map is
+steep, its location is less well determined than three significant figures would suggest and I
+will say so.
+
+The third is that the top cover may not separate from the strength early on at all. The
+Eurocode 2 modulus does move with strength, and if the elastic branch turns out to be governed
+by the modulus more than by the lever arm, prediction 1 fails on the early side while
+predictions 3 and 4 still hold. That outcome would say the sentence in spec 12.3 is half right,
+and half right is what the report would then say.
+
+The fourth is prediction 5. Correlated inputs are not the issue, since the reparameterization
+of spec 9.1 made the three genuinely independent, but the concrete damaged plasticity response
+near a peak is a nonlinear function of a strength and a geometry at once, and a large
+`T_i - S_i` gap would not be shocking. If the interaction share exceeds 0.15 the finding is
+that the response is not additive and the first order indices alone are not a summary of it.
+
+### The gate this prediction does not decide
+
+None of the five is a pass or fail criterion for the phase. The phase gate is build spec 22's:
+the Q2 thresholds applied per target, and the polynomial chaos and Gaussian process indices
+agreeing within their uncertainties or the discrepancy diagnosed in writing. This section
+exists so that the physics claim in the report is a prediction that survived rather than a
+description written after looking at the picture.
+
+### Results, measured 2026-08-30
+
+Everything above this line was committed in `0ebc224`, before `src/ufem/sensitivity.py` existed
+in `8788ced`, and is left exactly as written.
+
+**The verdict is that this campaign cannot decide the prediction.** All 24 sparse chaos
+expansions failed the corrected leave one out Q2 gate of build spec 12.1, so every index the
+five predictions would be read from is withheld. What follows is therefore not a verdict on the
+predictions; it is a record of which way the withheld numbers ran, kept so that whoever repeats
+this on a corrected campaign can see what was expected and what a failed campaign showed.
+
+| Prediction | Predicted | Measured (withheld) | Direction |
+|---|---|---|---|
+| 1. Crossover exists, top cover leads early | crossover present, before the peak | 0 crossings over 200 usable stations; Fcm leads everywhere | against |
+| 2. Crossover below 5 mm | below 5 mm | no crossover to locate | not applicable |
+| 3. S_Fcm above 0.6 at the peak, above 0.5 in softening | yes | Fcm at 0.931 at the first usable station and never below 0.583 | with, and then some |
+| 4. Bottom cover negligible, T_cbot below 0.10 everywhere | yes | maximum 0.0012 | with |
+| 5. Interaction share below 0.15 aggregated | yes | maximum 0.006 pointwise | with |
+
+**Prediction one ran against me, on direction and on location at once.** I expected the top
+cover to govern the early response through the lever arm of the transformed section, with the
+strength taking over as the tension zone cracked. The withheld decomposition has the strength
+holding 0.931 of the amplitude variance at the earliest station the decomposition exists at,
+0.03 mm on the mean displacement coordinate, and never yielding the lead: the top cover's
+closest approach is 0.167 behind, at 13.7 mm, on the softening branch rather than before the
+peak. If that ordering survives on a corrected campaign, the reading is that the elastic branch
+of these curves is governed by the Eurocode~2 modulus, which moves with strength, more than by
+the reinforcement lever arm, which was the third way I wrote down that I could be wrong.
+
+**Predictions four and five ran with me, and neither is surprising.** The bottom cover is
+negligible everywhere by a factor of eighty against the ceiling I named, which is consistent
+with the surrogate's own automatic relevance determination pinning that input's length scale at
+the top of its allowed range. The response is close to additive, at least in the sparse
+expansion's reading of it, and that is the reading whose sparsity the Gaussian process cross
+check disputes; see the discussion of the additivity gap in the report.
+
+**What I got wrong about the exercise, rather than about the physics.** The five predictions all
+presume the indices exist as statements about the beam. None of them anticipated that the
+prior question, whether any smooth metamodel can describe this campaign well enough for a
+variance decomposition to mean anything, would come back no. The right prediction to have
+committed alongside these would have been a Q2 one, and I did not write it. That is a lesson
+about what to predict rather than a lesson about beams, and the P7 predictions will carry a
+validity threshold of their own.

@@ -36,6 +36,7 @@ The UFEM project quantifies the effect of material and geometric uncertainty on 
 Every figure in this report is written by \texttt{report/figures\_src/make\_figures.py} from the pipeline's artifact store, and every number is written by \texttt{scripts/make\_data\_card.py} into a file this document inputs. The configuration that produced them hashes to \texttt{\ConfigHash}. A test regenerates both and fails if the committed copies have drifted.
 
 \section{The finite element model}
+\label{sec:model}
 The member is a two dimensional plane stress idealization: a $2000 \times 250$~mm concrete domain of thickness 150~mm, meshed with 637 four node reduced integration elements, with two embedded truss reinforcement layers (three 10~mm bars near the bottom face, three 12~mm bars near the top face, perfect bond). The member is supported by a pin at $x = 200$~mm on the top edge and a roller at $x = 1000$~mm on the bottom edge, and is loaded by a prescribed vertical displacement of 20~mm at the tip of the 800~mm overhang, i.e.\ displacement control throughout, which is why every converged run spans the full displacement range. Concrete is modeled with the damaged plasticity formulation (dilation angle $30^\circ$, eccentricity 0.1, $f_{b0}/f_{c0} = 1.16$, $K = 0.667$, viscosity parameter $8 \times 10^{-4}$); the hardening, stiffening, and damage tables are scaled per sample from the sampled strength. Steel is elastic plastic (500~MPa yield, 520~MPa at 1.5\,\% plastic strain).
 
 Two modeling limitations are inherited by every result in this report and are scheduled for correction in the follow up campaign: the tension softening definition is not regularized by fracture energy while the strength varies between samples, which is a physically incoherent coupling, and no mesh convergence study was performed for the production mesh despite the project's own written protocol requiring one.
@@ -527,6 +528,298 @@ the supremum of a standardized residual field has a long right tail; the multipl
 level accuracy reported in Section~\ref{sec:baselines}, where the surrogate does not beat its
 baselines. The band is honest about a model that is mediocre at whole curves, which is the
 correct behavior and an argument for improving the model rather than the band.
+
+\section{Global sensitivity}
+\label{sec:sensitivity}
+Because the three inputs are genuinely independent after the reparameterization of
+Section~\ref{sec:design}, ordinary Sobol machinery is valid here. Had the elastic modulus
+stayed a feature alongside the strength it is an exact function of, every Saltelli estimate in
+this section would have been structurally wrong, because the estimator resamples input columns
+independently and there is no independent resample of two columns that are the same random
+variable. That is not a caveat about precision. It is the difference between a number and a
+number shaped object, and it is the whole reason the standard machinery can be used at all.
+
+The primary construction is a sparse polynomial chaos expansion, for two reasons that both
+matter at \NValid{} points. The first is that its Sobol indices are not estimated. Expanding a
+response on a basis that is orthonormal under the input distribution makes the response
+variance the sum of the squared non constant coefficients, and the partial variance of any
+input set the sum over the terms supported on exactly that set, so the indices are read off the
+fitted coefficients with no sampling error whatsoever. The second is that sparsity is what
+makes the fit possible: the full degree \SensDegree{} tensor basis over three inputs is 56
+terms against \NValid{} points, so an ordinary least squares fit would be a rich model fitted
+with nothing left over to check it with. Hyperbolic truncation at $q = \SensHyperbolicQ$ cuts
+the candidate set to \SensCandidateTerms{} by penalizing high order interactions more than high
+order main effects, which is the right prior for a mechanical response, and least angle
+regression then selects a subset of those under a corrected leave one out criterion.
+
+The cross check draws Sobol indices from the Gaussian process posteriors instead, and the point
+of it is not a second opinion but an uncertainty. A polynomial chaos index is a single number
+with no error bar, and a reader has no way to tell a well determined 0.8 from a 0.8 that would
+have been 0.5 on a different sample of the same size. So \SensRealizations{} conditional
+realizations are drawn from each fitted posterior, a Saltelli estimate is computed on each one,
+and the index is reported as the distribution over them. Realizations rather than the posterior
+mean, because the mean of a Gaussian process is smoother than any of its draws and its indices
+are biased toward whichever input dominates. Two surrogate families with different failure
+modes agreeing on an index is the strongest validation available without new finite element
+runs, and where they disagree the disagreement is the finding.
+
+\subsection{The trust gate, and what it decided}
+\label{sec:q2gate}
+A Sobol index computed from a metamodel is a statement about the metamodel, and it inherits
+whatever the metamodel got wrong. Build specification 12.1 therefore ties publication to the
+corrected leave one out $Q^2$ of each expansion, on the thresholds of the Blatman and Sudret
+line of work: at or above \SensQTwoValues{} the index values are published; between
+\SensQTwoRankings{} and \SensQTwoValues{} only the ordering is, with the values carried as
+indicative; below \SensQTwoRankings{} nothing derived from that expansion is published. The
+thresholds were written into \texttt{src/ufem/sensitivity.py} before the first expansion was
+fitted, and they are in the code rather than in the configuration for the same reason the
+calibration thresholds of Section~\ref{sec:calibration} are: a threshold that can be edited
+without a code change is a threshold that will be edited when it fails.
+
+It failed. Of the \SensTargets{} expansions fitted, \SensPublishValues{} reached the value
+publishing level, \SensPublishRankings{} reached the ranking level, and \SensWithheld{} did not
+clear either. The best of them, \SensQTwoBestTarget{}, reaches \SensQTwoMax{} and the worst
+\SensQTwoMin{}. No Sobol index value and no input ranking from this campaign is published in
+this report. Table~\ref{tab:sensgate} and Figure~\ref{fig:sensgate} are what the phase produces
+instead: the measurement that decided it, per target, with the two thresholds drawn on.
+
+That is a result rather than a failure to produce one, and it is worth saying why it is worth
+having. The predecessor project ran this same analysis and published first order indices
+summing to 0.23 against total indices near 0.88 for three independent inputs, which is the
+signature of a noise dominated surface, and it published them because nothing in that pipeline
+ever asked whether the surface being decomposed described the beam. This pipeline asks, gets
+the answer no, and says so.
+
+\begin{table}[tbp]
+\centering
+\caption{The trust gate of build specification 12.1, per fitted expansion. $Q^2$ is the
+corrected leave one out coefficient of determination on the \NValid{} training points. The
+ceiling is the share of that target's variance the independently fitted Gaussian process
+nugget says the three inputs determine at this design density, and the roughness is the median
+absolute response difference between the closest \SensRoughFraction\,\% of design pairs as a
+share of the response standard deviation. Neither diagnostic is a gate and neither is
+withheld: both are measurements of the campaign rather than statements about the beam. A dash
+in the ceiling column marks the \SensPinned{} processes that pinned every length scale at its
+lower bound, for which a near zero fitted nugget is the interpolate the scatter corner rather
+than a statement that the response is explainable.}
+\label{tab:sensgate}
+\footnotesize
+\input{tables/sensitivity_gate.tex}
+\end{table}
+
+\begin{figure}[tbp]
+\centering
+\includegraphics[width=\linewidth]{fig_sensitivity_gate.pdf}
+\caption{Corrected leave one out $Q^2$ for every fitted expansion against the two publication
+thresholds. The tick on each bar is the explainable variance ceiling implied by that target's
+fitted Gaussian process nugget. Bars sitting at their own ceilings while falling short of the
+\SensQTwoRankings{} line say the expansion is not the limiting factor.}
+\label{fig:sensgate}
+\end{figure}
+
+\subsection{Why the gate fired}
+\label{sec:sensdiagnosis}
+Two independent measurements say the same thing, and neither of them is about the expansion.
+
+The first comes from the surrogate of Section~\ref{sec:surrogate}. Its Gaussian processes fit a
+nugget alongside the kernel, and in standardized target units the two together account for the
+whole variance, so the nugget is what an entirely different model family concluded the three
+inputs do not determine. Read as a ceiling on any smooth metamodel's $Q^2$, it is
+\SensCeilingPMax{} for peak load, \SensCeilingUPeak{} for displacement at peak,
+\SensCeilingKZero{} for initial stiffness and \SensCeilingEAbs{} for absorbed energy, against
+measured $Q^2$ values of \SensQTwoPMax{}, \SensQTwoUPeak{}, \SensQTwoKZero{} and
+\SensQTwoEAbs{}. Three of the four expansions sit at or near the ceiling their own data allows.
+A richer basis would not move them.
+
+The ceiling is only readable where the Gaussian process fit is not itself degenerate, and on
+\SensPinned{} of the \SensTargets{} targets it is not: those processes drove every length scale
+to its configured lower bound with a nugget near zero, which is the interpolate the scatter
+failure of Section~\ref{sec:surrogate} rather than a claim that the response is explainable.
+Their ceilings are withheld from Table~\ref{tab:sensgate} rather than printed, and every one of
+them is a trailing principal component that carries almost no variance to begin with. The four
+headline quantities are not among them.
+
+The second is model free and is the more direct of the two. For every training point, take its
+nearest neighbour in the standardized input space, and look at the closest
+\SensRoughFraction\,\% of those pairs, which are separated by at most \SensRoughSeparation{} in
+standardized units, well inside every fitted correlation length. The median absolute difference
+in peak load across those nearly coincident designs is \SensRoughPMax{} times the peak load
+standard deviation over the whole campaign; for displacement at peak it is \SensRoughUPeak{}
+and for initial stiffness \SensRoughKZero{}. Two beams that differ by a fraction of a
+millimetre of cover and a fraction of a megapascal of strength produce responses that differ by
+a large share of the entire campaign's spread. The response surface varies on a scale finer
+than \NValid{} points can resolve, and no smooth metamodel of any family will certify against
+it.
+
+The likely cause is in the finite element model itself and was named in
+Section~\ref{sec:model} long before any of this was measured. The inherited campaign varies the
+concrete strength while the tension softening table stays shape frozen and unregularized by a
+fracture energy, and it ran on one mesh with no convergence study. Under that combination the
+localization pattern is free to jump between neighbouring designs, which is exactly a response
+that is deterministic in principle and rough in practice. Correcting it is the first item of
+the follow up campaign, and this section is the quantitative argument for it: not that the
+model is inelegant, but that it makes the campaign's sensitivity structure unmeasurable.
+
+\subsection{The two constructions do not agree, and that is the same finding}
+\label{sec:sensagreement}
+Build specification 12.2 makes agreement between the two routes the acceptance criterion and
+requires a disagreement to be investigated in writing rather than averaged away. The criterion
+is containment: the analytic chaos index has no interval of its own, because it is a
+decomposition of a fitted expansion rather than an estimate of anything, so the test is whether
+it falls inside the Gaussian process posterior 90 percent interval. It does so on
+\SensAgreeCount{} of \SensAgreeRows{} index rows. The two constructions disagree on most of
+the response.
+
+That result would be alarming if the gate of Section~\ref{sec:q2gate} had passed. It is not
+alarming here, and the investigation is worth setting out in full, because a reader is entitled
+to ask whether the withheld verdict is a property of the campaign or of my implementation.
+
+The first thing checked was the one approximation this stage introduces. Drawing 200 joint
+realizations at \SensDesignRows{} points is not a factorization anybody can afford, so the
+realizations come from a pathwise construction whose prior term is a random Fourier feature
+expansion, with the conditioning update kept exact. Raising the feature count from 1024 to
+16384, which more than halves the measured kernel deviation, moves the posterior median first
+order index for peak load by 0.004 and for initial stiffness by 0.023, against gaps to the
+chaos value of 0.11 and 0.31. The approximation is not what separates the two routes.
+
+The second is structural, and it accounts for most of the gap. Least angle regression selects a
+sparse basis, and on \SensNoInteractionExpansions{} of the \SensTargets{} expansions it selected
+no interaction term at all, so the chaos total index equals the chaos first order index exactly
+on \SensAdditiveSlots{} of the \SensInputSlots{} input slots and the median chaos interaction
+share is \SensChaosInteraction{}. A Gaussian process realization is a generic rough function
+whose interaction is never exactly zero: the posterior does that on
+\SensPosteriorAdditiveSlots{} slots and its median interaction share is
+\SensPosteriorInteraction{}. Two model families that disagree about whether the response is
+additive will disagree about total indices whatever the data says, and the counts show exactly
+that shape: the first order indices agree on \SensAgreeFirst{} of \SensAgreeFirstRows{} rows and
+the total indices on only \SensAgreeTotal{} of \SensAgreeTotalRows{}.
+
+The third is that a share of the misses are boundary technicalities rather than disagreements
+about the beam. Where least angle regression drops an input entirely the chaos index is exactly
+zero, while the posterior interval for a negligible input starts just above zero, so the two
+differ by a thousandth and the containment test records a miss. Allowing a tolerance of 0.01
+raises the count to \SensAgreeWithinOnePct{} of \SensAgreeRows{}, and 0.05 raises it to
+\SensAgreeWithinFivePct{}. The median gap among the misses is \SensGapMedian{} against a median
+posterior interval width of \SensPosteriorWidthMedian{}.
+
+What is left after those three is a genuine disagreement about how the explained part of the
+variance is attributed, and it is exactly what two different wrong models should be expected to
+produce. Neither construction reaches $Q^2 = \SensQTwoRankings{}$ on any target, so neither is
+describing the response well enough for its variance decomposition to be the response's. There
+is no reason two such models should coincide, and the measurement is that they do not. The
+disagreement and the gate are one finding stated twice, and the correct conclusion from both is
+the one Section~\ref{sec:sensdiagnosis} reaches: this campaign's sensitivity structure is not
+measurable from these 198 runs.
+
+One presentational point, because it is the sort of thing that quietly inflates confidence
+elsewhere. The whiskers in Figure~\ref{fig:sobolagreement} are the surrogate's uncertainty about
+the index, taken across the \SensRealizations{} posterior realizations. They are not the
+confidence intervals SALib reports, which cover the Monte Carlo error of one Saltelli estimate
+on the \SensDesignRows{} point design and run between a fifth and a third of the posterior
+width here. Reporting the second in place of the first is how a sensitivity analysis comes to
+look far more certain than it is.
+
+\begin{figure}[tbp]
+\centering
+\includegraphics[width=\linewidth]{fig_sobol_agreement.pdf}
+\caption{First order and total Sobol indices for the four headline quantities, from both
+constructions. Bars are the Gaussian process posterior median, whiskers the posterior 90
+percent interval over \SensRealizations{} conditional realizations, diamonds the analytic
+polynomial chaos values. Every panel is hatched because every panel is withheld by the gate of
+Section~\ref{sec:q2gate}: nothing on this figure is a published index, and it is here as
+the evidence for the investigation of Section~\ref{sec:sensagreement}, where a diamond
+outside its whisker is a disagreement between two model families neither of which
+describes the response. The whiskers are
+surrogate uncertainty, not Saltelli Monte Carlo error.}
+\label{fig:sobolagreement}
+\end{figure}
+
+\begin{table}[tbp]
+\centering
+\caption{Sobol indices for the four headline quantities from both constructions, with the
+publication level each expansion earned. Dashes are not missing numbers: they are indices the
+gate withholds.}
+\label{tab:sobol}
+\footnotesize
+\input{tables/sobol_indices.tex}
+\end{table}
+
+\subsection{Along the curve}
+\label{sec:functional}
+The pointwise indices of Figure~\ref{fig:functional} are computed on the \emph{registered}
+amplitude functions, and that is not a technicality. At a fixed physical displacement near the
+peak, the dominant source of variation across runs is whether a given run has reached its peak
+yet, so an index computed there on unregistered curves would report which input moves the peak
+location rather than which input sets the load. Registration separates the two before the
+decomposition, which is why Section~\ref{sec:registration} comes first in this pipeline as well
+as in this report. The abscissa is therefore the Karcher mean displacement coordinate: a
+physical axis, but a mean one.
+
+The algebra is one matrix product. Each retained score carries its own chaos expansion, and
+applying the principal component loadings to those coefficients gives the chaos expansion of
+the field at every station, whose variance decomposition follows from orthonormality of the
+chaos basis. Because the loadings are orthonormal too, summing the pointwise partial variance
+over the stations is exactly the eigenvalue weighted generalized index of Lamboni, Monod and
+Makowski, so Table~\ref{tab:sensaggregated} and Figure~\ref{fig:functional} are two views of
+one decomposition rather than two calculations that happen to sit near each other. A test
+asserts that identity rather than trusting the derivation.
+
+\begin{figure}[tbp]
+\centering
+\includegraphics[width=\linewidth]{fig_functional_indices.pdf}
+\caption{Pointwise first order indices along the registered amplitude response, stacked, over
+the pointwise variance of the field. The \SensFuncAmplitudeStations{} stations shown are those
+where the observed family actually varies; the rest are $0/0$ and are absent rather than
+floored. The panel is annotated as withheld because the \SensFuncAmplitudeComponents{} score
+expansions it is built from all failed the gate of Section~\ref{sec:q2gate}.}
+\label{fig:functional}
+\end{figure}
+
+\begin{table}[tbp]
+\centering
+\caption{Generalized sensitivity indices per functional block under two weightings, with the
+per component indices for the leading three components of each. The chaos weighting is the one
+for which the aggregate equals the integral of the pointwise partial variance; the eigenvalue
+weighting is the literal Lamboni construction, and the two differ by exactly the share of each
+component its expansion failed to explain.}
+\label{tab:sensaggregated}
+\footnotesize
+\input{tables/sensitivity_aggregated.tex}
+\end{table}
+
+\subsection{A prediction that could not be decided}
+Build specification 12.3 states the expected physics in one sentence, covers dominating the
+service range stiffness and the concrete strength taking over near the peak and through
+softening, and before any index existed I committed that sentence to
+\texttt{docs/ABLATIONS.md} as five falsifiable predictions, in a commit that precedes the one
+adding \texttt{src/ufem/sensitivity.py}. The first and most important of them was that there is
+a displacement below which the top cover leads and above which the strength does, with the
+crossover before the peak.
+
+There is no crossover. The leading and second ranked inputs swap \SensFuncAmplitudeCrossings{}
+times over the \SensFuncAmplitudeStations{} usable stations: \SensFuncAmplitudeLeader{} leads
+everywhere, already holding \SensFuncAmplitudeLeadFirst{} of the variance at the first station
+the decomposition exists at, \SensFuncAmplitudeFirstStation\,mm, and
+\SensFuncAmplitudeRunnerUp{} comes no closer than \SensFuncAmplitudeMinMargin{} behind, at
+\SensFuncAmplitudeMinMarginAt\,mm on the softening branch. Read at face value that refutes
+prediction one on both its direction and its location. The other two predictions this figure
+can decide both hold: the bottom cover's total index never exceeds
+\SensFuncAmplitudeMaxTotalCBot{} against a predicted ceiling of 0.10, and the interaction share
+never exceeds \SensFuncAmplitudeMaxInteraction{} against a predicted ceiling of 0.15.
+
+But the numbers all three would be read from are the ones Section~\ref{sec:q2gate} withholds,
+and a prediction cannot be decided against evidence the same report declines to publish. So the
+honest record is that the prediction is undecided on this campaign, with the direction the
+withheld numbers ran stated for whoever repeats this on a corrected one. The prediction stays in
+\texttt{docs/ABLATIONS.md} unedited, which is the point of having written it down.
+
+The prediction did anticipate one of the two ways this could go wrong, and it is the way it
+went. It named the abscissa problem: these indices live on the registered arc length parameter
+mapped back through a mean displacement coordinate, so the early part of that axis is not
+exactly the early part of any one physical curve. What it did not anticipate is that the whole
+question would be undecidable, because the surface being decomposed does not describe the beam
+well enough for its decomposition to be about the beam. That is a better reason to have run the
+analysis than a confirmation would have been.
 
 \section{Conclusion}
 The campaign delivered \NValid{} fully converged, softening resolved load displacement and damage histories over a three dimensional input space, with clean, information rich response statistics. It also delivered two hard lessons that the successor pipeline is built around. Half the design was lost to a biased, undiagnosed failure mode, and the response to that is neither to ignore it nor to discard the data, but to model it: a calibrated completion probability model, a validity domain derived from it that every downstream stage must consult, and a weighting study that bounds the residual bias at a few percent of the mean. And two of the nominal outputs, the fourth input and the terminal damage, carry no independent information at all, which the predecessor project propagated anyway.

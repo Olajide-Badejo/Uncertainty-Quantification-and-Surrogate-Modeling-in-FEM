@@ -33,6 +33,9 @@ GENERATED = (
     f"{TABLES_DIR}/baselines_table.tex",
     f"{TABLES_DIR}/conformal_scalars.tex",
     f"{TABLES_DIR}/conformal_diagnostics.tex",
+    f"{TABLES_DIR}/sensitivity_gate.tex",
+    f"{TABLES_DIR}/sobol_indices.tex",
+    f"{TABLES_DIR}/sensitivity_aggregated.tex",
 )
 
 
