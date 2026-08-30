@@ -29,6 +29,7 @@ GENERATED = (
     f"{TABLES_DIR}/quartile_failure_rates.tex",
     f"{TABLES_DIR}/calibration.tex",
     f"{TABLES_DIR}/importance_weighting.tex",
+    f"{TABLES_DIR}/reduction_summary.tex",
 )
 
 
@@ -117,3 +118,44 @@ def test_the_card_carries_no_placeholder_or_unformatted_value(regenerated):
             f"the generated data card contains the bare token {marker!r} at offset "
             f"{found.start() if found else -1}, which means a measurement did not resolve."
         )
+
+
+@pytest.mark.fullstack
+def test_the_ablation_fragment_matches_the_ablation_artifact(repo_root):
+    """The one report fragment the data card does not own must not drift either.
+
+    ``report/tables/ablation_registration.tex`` is written by
+    ``scripts/ablation_1_registration.py`` rather than by the card generator, so the byte
+    comparison above does not cover it. Without this test it would be the single committed
+    number in the report with no gate behind it, which is exactly the gap that let a stale
+    figure reach a CI run at the end of P2. Here the fragment is checked against the values
+    in the ablation's own JSON artifact rather than regenerated, so the test states the
+    relationship that has to hold instead of duplicating the formatting code.
+    """
+    import json
+
+    from ufem.config import config_hash, load_config
+    from ufem.manifest import stage_dir
+
+    config = load_config(repo_root)
+    artifact = (
+        stage_dir(
+            repo_root / config.pipeline.paths.artifact_root,
+            "ablation_1_registration",
+            config_hash(config),
+        )
+        / "ablation_1_registration.json"
+    )
+    fragment = repo_root / "report" / "tables" / "ablation_registration.tex"
+    if not artifact.is_file() or not fragment.is_file():
+        pytest.skip("the registration ablation has not been run for this config hash")
+
+    results = json.loads(artifact.read_text(encoding="utf-8"))
+    text = fragment.read_text(encoding="utf-8")
+    counts = results["components_at_target"]
+    correlations = results["derivative_mode_correlation"]
+    assert f"{int(counts['registered'])} & {int(counts['unregistered'])}" in text
+    for side in ("registered", "unregistered"):
+        assert f"{correlations[side]:.3f}" in text, side
+        bias = results["peak_load_bias"][side]["mean_signed_error_N"]
+        assert f"{bias:+.1f}" in text, side

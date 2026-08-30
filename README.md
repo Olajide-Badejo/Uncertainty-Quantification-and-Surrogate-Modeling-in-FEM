@@ -26,8 +26,8 @@ Results are injected here from the artifact manifests at Phase P10. Nothing is c
 |---|---|---|
 | P0 | Scaffold, config, manifests, runner, lint, CI | Complete |
 | P1 | Ingest and common grid | Complete |
-| P2 | Audit, censoring model, first compiled report | Complete at this commit |
-| P3 | Registration and reduction | Not started |
+| P2 | Audit, censoring model, first compiled report | Complete |
+| P3 | Registration and reduction | Complete at this commit |
 | P4 | Gaussian process surrogate, baselines, validation | Not started |
 | P5 | Conformal calibration, scalar and functional | Not started |
 | P6 | Sensitivity | Not started |
@@ -56,9 +56,16 @@ first; if it does not agree with what you expect, nothing downstream is worth re
 
 `ufem run all` walks the stages in order. A stage whose cache key is unchanged prints
 `[cache hit]` and is skipped; `--force` reruns it. Stages that a later phase will implement
-raise with the phase named, so at this commit `run ingest`, `run grid` and `run audit` do
-real work and `run all` then reports that `register` arrives in P3 and exits nonzero. That is
-the intended behavior, not a failure of the install.
+raise with the phase named, so at this commit `run ingest`, `run grid`, `run audit`,
+`run register` and `run reduce` do real work and `run all` then reports that `surrogate`
+arrives in P4 and exits nonzero. That is the intended behavior, not a failure of the install.
+
+Two products of this phase are scripts rather than stages, and both read the artifact store:
+
+```powershell
+.venv\Scripts\python scripts\ablation_1_registration.py
+.venv\Scripts\python report\figures_src\make_figures.py
+```
 
 Ingest and grid read the two raw campaign CSVs from `legacy_salvage/data/`. Those are 123 MB
 and are deliberately not tracked by git; the ingest manifest records the SHA-256 of each at
@@ -92,6 +99,8 @@ UFEM_2.0/
     grid.py                 both signals on the common displacement grid, plus the scalar QoIs
     audit.py                validity reclassification, censoring statistics, completion model
     validity.py             the validity domain contract every downstream stage must consult
+    register.py             landmarks, arc length, SRVF registration, warp tangent space
+    reduce.py               functional PCA on amplitude, phase and damage
     plotting/               every report and UI figure, behind one style module
   data/
     audit_reference/        committed golden values from the pre build audit, P1 and P2 gate on these
@@ -103,12 +112,17 @@ UFEM_2.0/
   report/
     main.tex                the growing project report, no number typed into its prose
     tables/                 generated LaTeX fragments, committed, staleness gated by a test
-    figures/               generated PDFs, gitignored, written by figures_src/make_figures.py
+    figures/                generated PDFs, committed so report.yml can build without Python
   tests/                    contract, property, golden, manufactured, integration
-  scripts/                  dash_lint.py, check_file_sizes.py, make_data_card.py, export_processed.py
+  scripts/                  dash_lint.py, check_file_sizes.py, make_data_card.py, ablation_1_registration.py
   docs/                     BUILD_SPEC, ARCHITECTURE, DESIGN_DECISIONS, ENGINEERING_LOG, DEFECT_LOG, DATA_CARD
   .github/workflows/        ci.yml, report.yml
 ```
+
+`docs/ABLATIONS.md` records each ablation's predicted outcome, committed before the
+measurement exists so the commit order is the evidence, followed by the result and a verdict.
+The registration ablation of Phase P3 is the first: two of its three predictions held and one
+was refuted, and the refutation is reported as such rather than quietly dropped.
 
 `docs/DATA_CARD.md` is the campaign's data card: the design and its realized moments, the
 198/202/0 extraction split, the censoring bias tables with their tests and effect sizes, the

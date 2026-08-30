@@ -39,6 +39,10 @@
   "completion_design_inside_fraction": 0.5225,
   "completion_ece": 0.02574870029014199,
   "completion_threshold": 0.5,
+  "components_at_target": {
+    "registered_amplitude": 5,
+    "unregistered_curves": 15
+  },
   "config_sha256": "a81c6be1e06a653483aefc5bedee669f4f797cf16b9f520539fbfa342ed19c5f",
   "damage_U2_at_half_sat_median_mm": 8.302366311258577,
   "damage_median_at_U2_10mm": 0.9470000267028807,
@@ -145,5 +149,15 @@
     "Fcm_MPa": 0.7983605856349681,
     "c_nom_bottom_mm": -0.14286534560359654,
     "c_nom_top_mm": 0.23754746695162182
+  },
+  "registration": {
+    "mean_peak_registered_kN": 38.03931142644312,
+    "mean_peak_unregistered_kN": 38.0781829873313,
+    "mean_pointwise_std_registered_N": 4040.4567747770448,
+    "mean_pointwise_std_unregistered_N": 5063.557569578545
+  },
+  "warp": {
+    "max_abs_deviation_from_identity": 0.20809268490479382,
+    "n_warps": 198
   }
 }

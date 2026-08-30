@@ -311,3 +311,98 @@ numbers cannot drift from the pipeline because they are not in the report. The r
 stage should consult `ufem.validity.in_validity_domain` before it claims anything about a
 region of the input space, and the surrogate stage must carry the domain into its own
 artifact.
+
+## 2026-08-30, CI red on clean checkouts, between P2 and P3
+
+Two failures on the P2 merge, both the same root mistake: every gate had been verified on
+this machine, which has an artifact store and generated figures, while CI gets a checkout
+that has neither. The gates were testing the developer's disk, not the repository.
+
+Six `tests/test_validity.py` tests read the validity domain without depending on the fixture
+that skips when the audit stage has not run, so a gitignored `experiments/results/` failed
+the suite instead of skipping it. And `.gitignore` carried `report/figures/*.pdf` while
+`report.yml`'s own header claimed the LaTeX build needs no artifact store because the figures
+are committed, so the TeX Live container had no figures and `latexmk -halt-on-error` died on
+a missing `fig_E_collinearity.pdf`.
+
+Both fixed and both verified the way they should have been the first time, by cloning the
+repository to a scratch directory and running against that: 134 passed with 0 failed against
+6 before, and the report built at 10 pages. The figures are 556 KB in total, so committing
+them is comfortably inside the 5 MB rule, and the style module already pins
+`SOURCE_DATE_EPOCH` so a regenerated figure is byte identical. Both entries are in
+`docs/DEFECT_LOG.md` with their red run URLs.
+
+The lesson worth keeping is narrow. A gate that has only ever been run in the environment it
+was written in has not been tested; it has been rehearsed.
+
+## 2026-08-30, Phase P3: registration, reduction, ablation 1
+
+**SRVF is fast and, on this machine, exactly deterministic.** The whole registration stage is
+12.99 s on the 198 by 201 family, against a brief that budgeted minutes and authorized
+halving the effort knob past 15 minutes. No knob needed touching. More usefully, a forced
+rerun reproduces all five artifacts bitwise, so `fdasrsf` with `parallel=False` needs no
+tolerance gate and no downgrade to statistically reproducible; `tests/test_p3_determinism.py`
+asserts it rather than trusting it. The `parallel=False` is deliberate and is the one
+departure from the library defaults: the parallel path splits the family across workers, and
+a Karcher mean whose association order depends on scheduling would not reproduce.
+
+**Measured wall times**, all from the manifests: ingest 3.27 s, grid 0.20 s, audit 9.69 s,
+register 12.99 s, reduce 0.11 s. The full pipeline is about 26 s, against the 30 minute
+budget of spec section 2.
+
+**The gamma gate passes with room.** All 198 warps are monotone with a minimum increment of
+3.471e-04, and both endpoint errors are exactly 0.0, against the 1e-8 tolerance the P3 gate
+names. Not near the tolerance: at it.
+
+**Two landmark estimators were wrong before they were right, and the data said so.** The
+knee window started at 0.5 mm, which put the curvature minimum on the window edge for 135 of
+198 curves. These curves are linear to four significant digits over their first few grid
+points (1815.2, 1815.0, 1814.7 N per 0.1 mm step) and break between 0.6 and 0.8 mm, so a
+0.5 mm bound was cutting into the knee rather than excluding noise. At 0.2 mm no curve pins
+at the edge and the knee spreads over 0.5 to 0.9 mm. Separately, the 85 percent post peak
+landmark: 34 curves end above 85 percent of their peak at 20 mm, but 33 of those dip below
+and recover, so only 1 curve genuinely never softens that far. It is recorded as NaN with a
+`u85_reached` flag rather than clamped to the stroke end, which would have put a fictitious
+landmark at 20 mm into 17 percent of the family.
+
+**Component counts, two of which contradict the spec's expectation.** Registered amplitude 5
+(spec 10.2 expected 3 to 6, and PC1 alone carries 83.6 percent). Phase 63. Damage 11, where
+spec 10.2 floated the possibility that 2 would do; it reaches 94.4 percent at 4 and then
+carries a long tail. Reported as measured. The phase block being genuinely high dimensional
+is the number most likely to matter at P4, because it is the block the warp GPs will have to
+predict.
+
+**The ablation refuted one of its own three predictions, which is the point of committing
+them first.** Components at 99 percent: 5 registered against 15 unregistered, a ratio of
+exactly 3.00 against a predicted 2 to 3. Held. Peak load bias at matched rank 5: -60.8 N
+registered against -228.0 N unregistered, both negative and the unregistered one 3.75 times
+larger. Held. And `|corr(PC2, d mean/du)|`: 0.111 unregistered against 0.117 registered,
+where I had predicted above 0.7 and clearly higher on the unregistered side. Refuted on
+magnitude and on direction at once.
+
+A post hoc sweep of the first six components finds the derivative structure in PC1 (0.620
+unregistered against 0.499 registered), where the ordering does run as the mechanism argues.
+I did not promote that to a confirmation and the report says why: a metric chosen after
+seeing six of them is not the evidence a metric named in advance would have been. The likely
+explanation is that PC1 here is not a pure amplitude mode, because in this design the curves
+that peak late are also, through Fcm, the curves that peak high. Registration keeps its place
+on two legs of three, and the report states which leg gave way.
+
+**A gap closed while adding the report section.** `report/tables/ablation_registration.tex`
+is written by the ablation script rather than by the card generator, so the byte identity
+staleness gate did not cover it: it would have been the one committed number in the report
+with nothing behind it. It now has a test asserting it matches the ablation's JSON artifact,
+demonstrated failing on a planted 15 to 14 edit and passing on restore.
+
+**Gates.** 243 tests including the slow determinism rerun, up from 194 at P2. `ruff`,
+`dash_lint.py` and `check_file_sizes.py` clean over 184 tracked files. `latexmk` builds
+`main.pdf` at 14 pages from a cold start with zero overfull boxes and zero undefined
+references. The ten pre existing figures regenerate byte identical, so the four new ones are
+the only figure changes in the phase.
+
+**What P4 inherits.** Five amplitude scores, 63 phase scores and 11 damage scores per job in
+one `scores.parquet`, each block's basis stored with its mean and loadings so a fold can
+refit rather than reuse it, and a registration stage fast and deterministic enough to sit
+inside a cross validation loop if the fold honest requirement of binding law 3 demands it.
+The phase block's dimension is the thing to look at first: 63 scores over 198 samples is not
+a comfortable ratio, and it may argue for reducing the phase block harder than 99 percent.

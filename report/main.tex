@@ -192,6 +192,66 @@ These monotone, smooth, moderately interacting relations over three inputs are e
 \section{Consequences for surrogate construction}
 The audit fixes five requirements for the surrogate phase. First, the common displacement grid is legitimate: because loading is displacement controlled, every valid curve spans exactly 0 to 20~mm, and interpolation onto a shared \GridPoints{} point grid loses nothing at the resolution the curves carry. Second, duplicated solver cutback time stamps occur in a known subset of the jobs and must be removed by a strict monotonicity filter before interpolation. Third, the feature vector is three dimensional; the modulus is derived, never regressed on. Fourth, the displacement at peak varies by more than a factor of two across the family, so the curves exhibit phase variability as well as amplitude variability, and a registration step before dimensionality reduction is required to avoid the known artifacts of principal component analysis on misaligned peaked curves. Fifth, and specific to this phase, every product downstream of the surrogate must consult the validity domain of Section~\ref{sec:domain}, and any population level claim must either carry the weighting sensitivity of Section~\ref{sec:weighting} or state that it does not.
 
+\section{Registration and reduction}
+\label{sec:registration}
+The audit established that these curves vary in phase as well as in amplitude: the displacement at peak ranges over more than a factor of two across the family. That fact governs how the curves may be reduced to a small number of coordinates, which is the step every surrogate in this project is built on.
+
+Principal component analysis is a linear method, and a linear basis cannot represent a shift. Asked to describe a family whose features sit at different abscissae, it approximates the shift by superposing fixed shapes, which costs components that carry no mechanical meaning and, worse, smears the peak of any truncated reconstruction: averaging curves whose maxima are not aligned produces a mean that is flatter and lower than any individual curve. For a structural surrogate that is the least acceptable artifact available, because the peak load is the quantity the reliability analysis of a later phase thresholds. The remedy is to separate the two kinds of variation before reducing either, so that amplitude and phase each get a basis suited to it.
+
+This pipeline does that with the square root slope framework. Each curve is first reparameterized by arc length in a normalized load displacement plane, using the fixed global normalizers $P_0 = 40$~kN and $u_0 = 20$~mm read from the configuration rather than per curve values; normalizing each curve by its own peak would make every curve reach unity and destroy exactly the amplitude information the surrogate exists to predict. The family is then registered elastically, which yields a set of aligned amplitude functions and a set of warping functions $\gamma$ carrying the phase. The warps are mapped through $\psi = \sqrt{\dot{\gamma}}$ to the tangent space at their Karcher mean, because the warps themselves are monotone functions pinned at both ends and so do not form a vector space: a principal component of raw $\gamma$ would in general not be a warp at all. Every one of the \NValid{} warps produced here is monotone with $\gamma(0) = 0$ and $\gamma(1) = 1$ to within $10^{-8}$, which is the gate this phase is required to pass.
+
+Figure~\ref{fig:registration} shows the family before and after registration and Figure~\ref{fig:warps} the warping functions themselves. Three separate reductions follow, summarized in Table~\ref{tab:reduction}: one on the registered amplitude, one on the phase, and one on the damage curves, which are deliberately left unregistered because they are monotone saturating curves that all terminate at the same material table cap, so they carry no phase variation worth separating. Components are retained to \VarianceTarget\,\% of variance in each block. The registered amplitude needs \ComponentsAmplitude{}, with the first component alone carrying \AmplitudePCOne\,\% of the variance; its leading loadings are shown in Figure~\ref{fig:loadings}. The phase block needs \ComponentsPhase{} and the damage block \ComponentsDamage{}, and both of those numbers are larger than the build specification anticipated. The damage family in particular was expected to be describable in about two components; it reaches \VarianceDamage\,\% only at \ComponentsDamage{}, because a long tail of small modes follows a strong leading pair. These are reported as measured rather than adjusted.
+
+\begin{table}[tbp]
+\centering
+\caption{The three reduction blocks, each retained to \VarianceTarget\,\% of explained variance. The reconstruction error is the per curve relative $L_2$ residual about the block mean, at the retained rank.}
+\label{tab:reduction}
+\input{tables/reduction_summary.tex}
+\end{table}
+
+\begin{figure}[tbp]
+\centering
+\includegraphics[width=\linewidth]{fig_registration_before_after.pdf}
+\caption{The \NValid{} amplitude functions on the common arc length grid, before and after elastic registration, with the pointwise median in bold. The median peak is sharper after registration because the individual peaks are aligned; the amplitude itself is preserved.}
+\label{fig:registration}
+\end{figure}
+
+\begin{figure}[tbp]
+\centering
+\includegraphics[width=0.62\linewidth]{fig_warp_family.pdf}
+\caption{The \NValid{} warping functions, with the identity dashed. Departure from the diagonal is the phase variation that registration moves out of the amplitude functions and into this family.}
+\label{fig:warps}
+\end{figure}
+
+\begin{figure}[tbp]
+\centering
+\includegraphics[width=\linewidth]{fig_amplitude_loadings.pdf}
+\caption{The three leading principal component loadings of the registered amplitude block, with the share of variance each explains.}
+\label{fig:loadings}
+\end{figure}
+
+\subsection{Did registration earn its place?}
+\label{sec:ablation1}
+Because registration is the methodological centre of this pipeline, it is tested rather than asserted, and the test was specified before it was run. The predicted outcome was committed to \texttt{docs/ABLATIONS.md} in a commit that precedes the one adding the measurement script, so the prediction cannot have been fitted to a number already seen. Three model free metrics compare the registered reduction against principal component analysis applied directly to the curves on the displacement grid, with no surrogate involved on either side, because the claim under test is about the representation.
+
+Two of the three predictions held and one failed, and Table~\ref{tab:ablation} reports all three. The component count is the clearest result: the unregistered family needs \AblationComponentsUnregistered{} components to reach \VarianceTarget\,\% of its variance where the registered family needs \AblationComponentsRegistered{}, a ratio of \AblationComponentRatio{} against a predicted two to three. The peak load bias also came out as predicted in sign and in ordering: reconstructing at the common rank of \AblationRank{} components under predicts the mean peak load by \AblationPeakBiasUnregistered~N without registration against \AblationPeakBiasRegistered~N with it, or \AblationPeakBiasUnregisteredPct\,\% against \AblationPeakBiasRegisteredPct\,\% of the mean peak. The registered reconstruction is carried back through its own warps before its peak is measured, so neither side is flattered by being scored in a space where the phase never had to be reproduced.
+
+The third prediction was wrong. I expected the second principal component of the unregistered family to be visibly derivative shaped, correlating with $\mathrm{d}\bar{f}/\mathrm{d}u$ above 0.7 and far above the registered value, on the reasoning that a small shift of a function is to first order the negative of its derivative times the shift. The measured correlations are \AblationDerivCorrUnregistered{} unregistered and \AblationDerivCorrRegistered{} registered: both negligible, and running the wrong way. Inspecting all six leading components afterwards, which is a diagnostic and not a prediction, locates the derivative structure in the first component instead (\AblationDerivCorrPCOneUnregistered{} unregistered against \AblationDerivCorrPCOneRegistered{} registered), where the ordering does run as the mechanism argues. The honest reading is that the first component here is not a pure amplitude mode, because in this design the curves that peak late are also, through the concrete strength, the curves that peak high, so amplitude and phase are correlated rather than orthogonal. The mechanism may well be sound; my specification of where to look for it was not, and the number selected after the fact is not promoted to a confirmation. Registration is retained on the strength of the component count and the peak bias, which is two of the three legs it was asked to stand on.
+
+\begin{table}[tbp]
+\centering
+\caption{Ablation 1, registration against no registration, on the same \NValid{} curves. The predicted directions were committed before these numbers were computed; the second row is the one that refuted its prediction.}
+\label{tab:ablation}
+\input{tables/ablation_registration.tex}
+\end{table}
+
+\begin{figure}[tbp]
+\centering
+\includegraphics[width=0.72\linewidth]{fig_scree.pdf}
+\caption{Cumulative explained variance of the registered amplitude basis against a basis fitted directly to the unregistered curves. The dashed vertical lines mark where each crosses the \VarianceTarget\,\% target: \AblationComponentsRegistered{} components against \AblationComponentsUnregistered{}.}
+\label{fig:scree}
+\end{figure}
+
 \section{Conclusion}
 The campaign delivered \NValid{} fully converged, softening resolved load displacement and damage histories over a three dimensional input space, with clean, information rich response statistics. It also delivered two hard lessons that the successor pipeline is built around. Half the design was lost to a biased, undiagnosed failure mode, and the response to that is neither to ignore it nor to discard the data, but to model it: a calibrated completion probability model, a validity domain derived from it that every downstream stage must consult, and a weighting study that bounds the residual bias at a few percent of the mean. And two of the nominal outputs, the fourth input and the terminal damage, carry no independent information at all, which the predecessor project propagated anyway.
 

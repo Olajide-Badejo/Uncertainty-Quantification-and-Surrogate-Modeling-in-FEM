@@ -61,6 +61,12 @@ from ufem.ingest import DESIGN_PARQUET, LOAD_PARQUET  # noqa: E402
 from ufem.ingest import STAGE_NAME as INGEST_STAGE  # noqa: E402
 from ufem.manifest import stage_dir  # noqa: E402
 from ufem.plotting.censoring import calibration_plot, completion_surface  # noqa: E402
+from ufem.plotting.registration import (  # noqa: E402
+    amplitude_loadings,
+    registration_before_after,
+    scree,
+    warp_family,
+)
 from ufem.plotting.style import (  # noqa: E402
     C_BAND,
     C_INK_2,
@@ -72,6 +78,15 @@ from ufem.plotting.style import (  # noqa: E402
     apply_style,
     save_figure,
 )
+from ufem.reduce import BASIS_JSON, fit_basis  # noqa: E402
+from ufem.reduce import STAGE_NAME as REDUCE_STAGE  # noqa: E402
+from ufem.register import (  # noqa: E402
+    AMPLITUDE_PARQUET,
+    AMPLITUDE_UNREGISTERED_PARQUET,
+    WARP_PARQUET,
+    curve_matrix,
+)
+from ufem.register import STAGE_NAME as REGISTER_STAGE  # noqa: E402
 
 OUT = REPO_ROOT / "report" / "figures"
 ANNOT = annotation_style()
@@ -437,6 +452,72 @@ def main() -> int:
         "mean": float(np.mean(k0)), "std": float(np.std(k0, ddof=1)),
         "min": float(k0.min()), "max": float(k0.max()),
     }
+
+    # ------------------------------------------------------------------
+    # Phase P3: registration and reduction. The ablation's own numbers are written by
+    # scripts/ablation_1_registration.py; what is read back here is only what the figures
+    # draw, so no number is computed in two places.
+    register_dir = _stage(REGISTER_STAGE, digest)
+    reduce_dir = _stage(REDUCE_STAGE, digest)
+    stations = np.linspace(0.0, 1.0, 201)
+
+    _jobs, registered = curve_matrix(pd.read_parquet(register_dir / AMPLITUDE_PARQUET))
+    _j2, unregistered = curve_matrix(
+        pd.read_parquet(register_dir / AMPLITUDE_UNREGISTERED_PARQUET)
+    )
+    _j3, gamma = curve_matrix(pd.read_parquet(register_dir / WARP_PARQUET))
+    bases = json.loads((reduce_dir / BASIS_JSON).read_text(encoding="utf-8"))
+    amplitude_block = next(
+        block for block in bases["blocks"] if block["name"] == "amplitude"
+    )
+
+    print("fig_registration_before_after.pdf")
+    save_figure(
+        registration_before_after(stations, unregistered, registered),
+        OUT / "fig_registration_before_after.pdf",
+    )
+    RESULTS["registration"] = {
+        "mean_pointwise_std_unregistered_N": float(unregistered.std(axis=0).mean()),
+        "mean_pointwise_std_registered_N": float(registered.std(axis=0).mean()),
+        "mean_peak_unregistered_kN": float(unregistered.max(axis=1).mean() / 1000.0),
+        "mean_peak_registered_kN": float(registered.max(axis=1).mean() / 1000.0),
+    }
+
+    print("fig_warp_family.pdf")
+    save_figure(warp_family(stations, gamma), OUT / "fig_warp_family.pdf")
+    RESULTS["warp"] = {
+        "n_warps": int(gamma.shape[0]),
+        "max_abs_deviation_from_identity": float(np.abs(gamma - stations).max()),
+    }
+
+    print("fig_scree.pdf")
+    # The unregistered basis is refitted here rather than read from an artifact because it
+    # is the ablation's comparison case and never ships in the pipeline's own reduction.
+    unregistered_curve_basis = fit_basis(rf2_grid * 1000.0, "unregistered", 0.99)
+    save_figure(
+        scree(
+            np.array(amplitude_block["explained_variance_ratio"], dtype=float),
+            unregistered_curve_basis.explained_variance_ratio,
+            float(bases["variance_target"]),
+            int(amplitude_block["n_retained"]),
+            int(unregistered_curve_basis.n_retained),
+        ),
+        OUT / "fig_scree.pdf",
+    )
+    RESULTS["components_at_target"] = {
+        "registered_amplitude": int(amplitude_block["n_retained"]),
+        "unregistered_curves": int(unregistered_curve_basis.n_retained),
+    }
+
+    print("fig_amplitude_loadings.pdf")
+    save_figure(
+        amplitude_loadings(
+            stations,
+            np.array(amplitude_block["components"], dtype=float),
+            np.array(amplitude_block["explained_variance_ratio"], dtype=float),
+        ),
+        OUT / "fig_amplitude_loadings.pdf",
+    )
 
     RESULTS["config_sha256"] = digest
     (Path(__file__).resolve().parent / "figure_stats.json").write_text(
