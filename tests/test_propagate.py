@@ -408,6 +408,28 @@ class TestTheDeclaredContract:
             assert state.direction in ("below", "above")
             assert len(state.justification) > 80
 
+    def test_no_limit_state_label_outlives_the_threshold_it_describes(self, config):
+        """Two labels state their threshold in words, and words do not follow a config edit.
+
+        "below one half" and "above 0.93" are readable and they are also a second copy of a
+        number that lives in ``configs/pipeline.yaml``. Rewriting them as "below its threshold"
+        would remove the duplication and the meaning together, so the duplication stays and
+        this test is what makes it safe: change the configured value without changing the
+        label and the suite says so.
+        """
+        thresholds = config.pipeline.limit_states.model_dump()
+        by_field = {state.config_field: state for state in LIMIT_STATES}
+        assert thresholds["residual_ratio_below"] == 0.5, (
+            "the residual capacity limit state is labeled 'below one half' in "
+            f"{by_field['residual_ratio_below'].label!r}, but the configured threshold is "
+            f"{thresholds['residual_ratio_below']}. Change the label with the number."
+        )
+        damage = by_field["damage_at_10mm_above"]
+        assert f"{thresholds['damage_at_10mm_above']:g}" in damage.label, (
+            f"the damage limit state label {damage.label!r} does not state the configured "
+            f"threshold {thresholds['damage_at_10mm_above']}. Change the label with the number."
+        )
+
     def test_the_band_level_is_one_the_calibration_stage_measured(self, config):
         assert BAND_ALPHA in set(config.pipeline.conformal.alphas)
 
