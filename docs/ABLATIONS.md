@@ -368,6 +368,51 @@ Prediction 2 is the one I would defend hardest. NLPD punishes a confident mistak
 through the exponent and rewards an honest wide interval only logarithmically, so it is the
 metric on which a model whose variance does not know where the data is loses most clearly.
 
+### Results, measured 2026-08-31
+
+Everything above this line was committed before `scripts/ablation_3_deep_ensemble.py` existed and
+is left exactly as written. The four predictions split exactly along the line between accuracy
+and uncertainty, which is not the split I predicted but is the one the method is known for.
+
+| Metric | Production | Ensemble | Prediction | Verdict |
+|---|---|---|---|---|
+| Pointwise RMSE [N] | 6670.9 | 6226.6 | ensemble worse | **refuted** |
+| NLPD [nats per station] | 10.575 | 12.393 | ensemble worse | **held** |
+| Pointwise 90 percent coverage | 0.791 | 0.761 | below 0.90 and below production | **held** |
+| Median curve relative L2 | 23.09 % | 19.37 % | ensemble worse | **refuted** |
+
+**Both accuracy predictions failed, and for the reason I named in advance.** The ensemble is more
+accurate than the production pipeline pointwise and per curve. That is now the third independent
+direct curve model to beat the reconstruction at curve level, after the P4 baselines and the
+autoencoder of ablation 2, and at this point the honest reading is not that these models are
+good but that the reconstruction path leaks: a model predicting heights on a fixed abscissa
+cannot make a phase error, and the production pipeline predicts a displacement coordinate and a
+warp and then composes them, so a small error in either moves the whole curve sideways and pays
+for it in L2 twice over.
+
+**Both uncertainty predictions held.** The ensemble's negative log predictive density is 12.393
+nats per station against 10.575, and its pointwise coverage is 0.761 against 0.791 at a nominal
+0.90. So it is more accurate and less honest at the same time, on the same folds, which is the
+textbook description of a deep ensemble and is the thing worth carrying out of this ablation.
+Neither side is calibrated here and the comparison is fair in that respect: the production
+pointwise variance is the linear amplitude propagation of build spec 10.4 plus the truncation
+residual, deliberately excluding the phase and displacement uncertainty, so it under covers too.
+The difference is that the production pipeline has a stage that fixes it, measured at 0.9040
+simultaneous coverage in P5, and an ensemble variance has no such construction behind it.
+
+**Ensembling itself bought almost nothing.** One member alone reaches 19.58 percent median
+relative L2 against 19.37 percent for the five member mixture. At this sample size the five
+members agree closely enough that the mixture is mostly one model with a wider interval, which is
+also why the coverage is only 0.03 below the production pipeline's rather than far below it.
+
+**Peak load, reported because ablation 2 made it the interesting number.** The ensemble reads
+0.226 out of sample R2 on the peak off its own curve, against 0.711 for the production curve and
+0.717 for the production scalar process, with a bias of -1873 N. Better than the autoencoder's
+-0.117 and still not usable for a limit state. Two direct curve models, two curve level wins, two
+useless peaks.
+
+**Cost.** 237 seconds on CPU, of which 235 is training the fifty networks.
+
 ## Ablation 4: B-spline coefficient regression
 
 **Build spec 10.6.4. Prediction committed 2026-08-31, before `scripts/ablation_4_bspline.py`
