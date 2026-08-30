@@ -201,10 +201,20 @@ def _p_value(value: float) -> str:
     return f"{number:.2e}"
 
 
+def _escape(text: str) -> str:
+    """Escape the underscores in a table cell, because target names are full of them.
+
+    ``P_max_N`` in a markdown table renders as ``PmaxN`` with the middle in italics, which is
+    not a target name any artifact contains. Applied to every cell rather than to the ones
+    that happen to need it today, since the cells are built from artifact keys.
+    """
+    return text.replace("_", r"\_")
+
+
 def _table(headers: list[str], rows: list[list[str]]) -> list[str]:
     return (
         ["| " + " | ".join(headers) + " |", "|" + "|".join(["---"] * len(headers)) + "|"]
-        + ["| " + " | ".join(row) + " |" for row in rows]
+        + ["| " + " | ".join(_escape(cell) for cell in row) + " |" for row in rows]
     )
 
 
@@ -317,7 +327,9 @@ def build_model_card(data: dict[str, Any], config: Config) -> str:
     )
     add()
     add(
-        f"Scalar targets with their own process: {', '.join(sorted(surrogate['scalar_targets']))}."
+        "Scalar targets with their own process: "
+        + ", ".join(f"`{name}`" for name in sorted(surrogate["scalar_targets"]))
+        + "."
     )
     add()
 

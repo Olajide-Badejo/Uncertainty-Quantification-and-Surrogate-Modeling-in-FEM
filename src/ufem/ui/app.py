@@ -65,10 +65,21 @@ def _fmt_share(value: float) -> str:
     return f"{value:.{layout.COARSE_DECIMALS}%}"
 
 
+def _escape(text: str) -> str:
+    """Escape the underscores in a table cell, because target names are full of them.
+
+    ``P_max_N`` in a markdown table renders as ``PmaxN`` with the middle in italics, which is
+    not a name any artifact contains. Applied to every cell rather than to the ones that
+    happen to need it today, because the cells are built out of artifact keys and a new key
+    with two underscores in it would otherwise silently lose them both.
+    """
+    return text.replace("_", r"\_")
+
+
 def _markdown_table(headers: list[str], rows: list[list[str]]) -> str:
     """A markdown table, so a panel can state a table without inventing a widget."""
     lines = ["| " + " | ".join(headers) + " |", "|" + "|".join(["---"] * len(headers)) + "|"]
-    lines += ["| " + " | ".join(row) + " |" for row in rows]
+    lines += ["| " + " | ".join(_escape(cell) for cell in row) + " |" for row in rows]
     return "\n".join(lines)
 
 

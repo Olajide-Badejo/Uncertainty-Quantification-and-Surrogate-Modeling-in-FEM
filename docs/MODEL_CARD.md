@@ -53,7 +53,7 @@ Representation: the curve family is registered and reduced, and the Gaussian pro
 | displacement | 10 |
 | phase | 8 |
 
-Scalar targets with their own process: E_abs_Nmm, P_knee_N, P_max_N, P_residual_N, arclength_total, damage_at_10mm, k0_N_per_mm, softening_ratio, u_damage_half_sat_mm, u_knee_mm, u_peak_mm.
+Scalar targets with their own process: `E_abs_Nmm`, `P_knee_N`, `P_max_N`, `P_residual_N`, `arclength_total`, `damage_at_10mm`, `k0_N_per_mm`, `softening_ratio`, `u_damage_half_sat_mm`, `u_knee_mm`, `u_peak_mm`.
 
 ## Validity domain: where this model is allowed to speak
 
@@ -63,7 +63,7 @@ A query is inside the domain when the fitted completion model gives P(complete) 
 
 | Measurement | Value |
 |---|---|
-| Completion model | gaussian_process |
+| Completion model | gaussian\_process |
 | Cross validated ROC AUC | 0.7018 |
 | Cross validated Brier score against the base rate | 0.2193 against 0.2500 |
 | Expected calibration error | 0.0257 |
@@ -75,9 +75,9 @@ Where the campaign failed, by input, at the configured significance level:
 
 | Input | Associated with failure | Chi squared p value | Worst quartile | Failures there |
 |---|---|---|---|---|
-| Mean compressive strength | yes | 0.0058 | Q4_high, [29.79, 37.93] MPa | 63 of 100 |
-| Bottom cover | no | 0.3030 | Q4_high, [29.01, 38.75] mm | 56 of 100 |
-| Top cover | yes | 2.93e-11 | Q1_low, [205.55, 219.64] mm | 76 of 100 |
+| Mean compressive strength | yes | 0.0058 | Q4\_high, [29.79, 37.93] MPa | 63 of 100 |
+| Bottom cover | no | 0.3030 | Q4\_high, [29.01, 38.75] mm | 56 of 100 |
+| Top cover | yes | 2.93e-11 | Q1\_low, [205.55, 219.64] mm | 76 of 100 |
 
 UFEM Lab grays out a prediction whose inputs fall outside this domain and names the corner it fell into, from this same table.
 
@@ -104,27 +104,27 @@ Calibration gate passed: **True**.
 |---|---|---|---|
 | simultaneous 90 percent band, force curves | 0.9040 | [0.8550, 0.9377] | True |
 | simultaneous 90 percent band, damage curves | 0.9040 | [0.8550, 0.9377] | True |
-| jackknife+ 90 percent interval, P_max_N | 0.9040 | [0.8550, 0.9377] | True |
-| jackknife+ 90 percent interval, u_peak_mm | 0.9040 | [0.8550, 0.9377] | True |
-| jackknife+ 90 percent interval, k0_N_per_mm | 0.9040 | [0.8550, 0.9377] | True |
-| jackknife+ 90 percent interval, E_abs_Nmm | 0.9040 | [0.8550, 0.9377] | True |
+| jackknife+ 90 percent interval, P\_max\_N | 0.9040 | [0.8550, 0.9377] | True |
+| jackknife+ 90 percent interval, u\_peak\_mm | 0.9040 | [0.8550, 0.9377] | True |
+| jackknife+ 90 percent interval, k0\_N\_per\_mm | 0.9040 | [0.8550, 0.9377] | True |
+| jackknife+ 90 percent interval, E\_abs\_Nmm | 0.9040 | [0.8550, 0.9377] | True |
 | PIT outer decile mass on the softening branch at or below 0.35 | 0.1122 | not a counted proportion | True |
 
 The measured out of fold variance scaling factor per scalar target. A factor near one means the fitted process was already saying the right width; a factor far from one is the model being corrected, and it is applied rather than hidden.
 
 | Target | Variance scaling factor | Predictive variance adequacy, before |
 |---|---|---|
-| E_abs_Nmm | 1.0082 | 0.0163 |
-| P_knee_N | 1.1048 | 0.1993 |
-| P_max_N | 0.9976 | -0.0047 |
-| P_residual_N | 1.0090 | 0.0180 |
-| arclength_total | 1.0075 | 0.0149 |
-| damage_at_10mm | 1.0081 | 0.0161 |
-| k0_N_per_mm | 1.0080 | 0.0160 |
-| softening_ratio | 1.0079 | 0.0158 |
-| u_damage_half_sat_mm | 1.0059 | 0.0117 |
-| u_knee_mm | 1.1986 | 0.3623 |
-| u_peak_mm | 1.0073 | 0.0145 |
+| E\_abs\_Nmm | 1.0082 | 0.0163 |
+| P\_knee\_N | 1.1048 | 0.1993 |
+| P\_max\_N | 0.9976 | -0.0047 |
+| P\_residual\_N | 1.0090 | 0.0180 |
+| arclength\_total | 1.0075 | 0.0149 |
+| damage\_at\_10mm | 1.0081 | 0.0161 |
+| k0\_N\_per\_mm | 1.0080 | 0.0160 |
+| softening\_ratio | 1.0079 | 0.0158 |
+| u\_damage\_half\_sat\_mm | 1.0059 | 0.0117 |
+| u\_knee\_mm | 1.1986 | 0.3623 |
+| u\_peak\_mm | 1.0073 | 0.0145 |
 
 Functional bands, per signal, at the levels whose coverage was measured:
 
