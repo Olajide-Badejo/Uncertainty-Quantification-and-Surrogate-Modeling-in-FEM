@@ -396,6 +396,81 @@ peak region, which would give a positive bias rather than the negative one I hav
 positive bias would be worse than a negative one for a reliability analysis that thresholds the
 peak from below, and I would say so.
 
+## Ablation 5: Sobol sequence against Latin hypercube subsampling
+
+**Build spec 10.6.5. Prediction committed 2026-08-31, before `scripts/ablation_5_design.py`
+existed.**
+
+### What is being compared
+
+A design sensitivity study, and it is worth being blunt about what it can and cannot say. No new
+finite element run is available, so this is not a rerun of the campaign under a different design.
+It is a subsampling study on the 198 runs that exist: at each n in {64, 128, 198}, subsets of
+that size are selected out of the 198 in two ways, ten seeded repetitions each, and the
+production peak load Gaussian process is fitted on each subset and scored by its closed form
+leave one out error.
+
+- **Random subsets**, drawn without replacement from the 198. This is the stand in for thinning
+  a Latin hypercube design, and the substitution is the honest weak point of the study: a random
+  subset of a Latin hypercube sample is not itself a Latin hypercube sample, it only inherits the
+  parent's stratification in expectation.
+- **Sobol guided selection.** A scrambled Sobol sequence of n points is generated over the box
+  spanned by the 198 executed design points, and each Sobol point claims the nearest existing
+  design point not yet taken, in standardized coordinates, greedily in sequence order. The result
+  is the subset of real runs that most nearly realizes a Sobol design, which is as close to a
+  Sobol campaign as an inherited campaign can get.
+
+What this measures is therefore how much the space filling quality of the retained points moves
+the surrogate's error at a fixed budget, not what a Sobol campaign would have produced. That
+distinction goes in the report, not just here.
+
+### The mechanism I expect to see
+
+At 64 points over three inputs the design is sparse enough that clumping costs real accuracy: a
+random subset leaves gaps, and a Gaussian process interpolates a gap by falling back toward its
+mean, which is exactly where the leave one out error is made. A low discrepancy selection fills
+those gaps by construction, so it should buy a small but consistent improvement. As n grows the
+random subsets fill the space too, by the same argument that makes plain Monte Carlo converge,
+and the advantage of the low discrepancy selection should shrink toward nothing.
+
+At n = 198 the study is degenerate and I am recording that in advance rather than discovering it:
+both selections must return all 198 runs, because that is the entire population. The two methods
+are then the same set by construction and the difference is exactly zero. That is not a
+measurement of convergence, it is arithmetic, and the report will say so instead of showing a
+vanishing gap as though it were evidence.
+
+### Predicted outcome, stated so it can fail
+
+1. **Direction at n = 64.** The Sobol guided selection's mean leave one out root mean square
+   error on the peak load, averaged over the ten repetitions, is **lower** than the random
+   subsets'. Direction: Sobol better at the smallest budget.
+2. **Size at n = 64.** The advantage is **small, under 10 percent relative**, and I expect it to
+   be comparable to the spread across repetitions rather than clearly outside it. If the ten
+   repetition standard deviations overlap heavily, the finding is that the study cannot resolve
+   the effect at this sample count.
+3. **Shrinkage at n = 128.** The relative advantage at 128 is **smaller than at 64**, and by 198
+   it is identically zero for the structural reason above.
+
+### How I could be wrong
+
+The clearest way is prediction 1 running the other way, and there is a real mechanism for it. The
+198 survivors are a censored subsample, not a clean Latin hypercube: the failures cluster at low
+top cover and high strength, so the executed points do not fill the box the Sobol sequence is
+generated over. A Sobol point in the censored corner claims whatever real run is nearest, which
+can be far away, and the greedy claiming can drag the selection toward the edge of the data. A
+random subset has no such pull. If the Sobol selection loses, that is what I would look at first,
+and it would be a finding about the censoring rather than about low discrepancy sequences.
+
+The second way is that the peak load surface is close enough to a smooth ridge in strength that
+64 points anywhere describe it well, in which case both selections score the same and prediction
+1 is unresolvable rather than wrong. The peak load correlates with strength at 0.80, so this is
+not a remote possibility.
+
+The third way is the metric. Leave one out error on a subset of 64 is itself a noisy statistic,
+and ten repetitions is a small sample of designs. I am reporting the repetition spread beside
+every mean so a reader can see whether the difference clears it, and if it does not I will not
+claim the direction held.
+
 ## Phase P6 prediction: what the functional sensitivity indices should look like
 
 **Build spec 12.3. Prediction committed 2026-08-30, before `src/ufem/sensitivity.py` existed
