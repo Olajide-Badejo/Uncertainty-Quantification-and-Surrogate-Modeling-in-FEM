@@ -893,17 +893,28 @@ products rather than 1e5 library calls. Full pipeline, ingest through propagate:
 minutes, inside the 30 minute gate of build spec section 2, with 576.1 s of it still the P4 fold
 harness.
 
-**Gates.** 503 fast tests, up from 421 at P6, plus the slow markers. `ruff`, `dash_lint.py` and
-`check_file_sizes.py` clean. The propagate stage reproduces all ten of its artifacts bitwise on a
-forced rerun. `latexmk` builds `main.pdf` at 33 pages, up from 27, with no new overfull or
-underfull boxes and no undefined references. Three new generated table fragments joined the byte
-identity staleness gate.
+**Gates.** 508 fast tests, up from 421 at P6, and 526 with the slow markers. `ruff`,
+`dash_lint.py` and `check_file_sizes.py` clean over 236 tracked files. The propagate stage
+reproduces all ten of its artifacts bitwise on a forced rerun. `latexmk` builds `main.pdf` at 33
+pages, up from 27, with no new overfull or underfull boxes and no undefined references. Three new
+generated table fragments joined the byte identity staleness gate.
 
 One overfull box did appear and was fixed rather than tolerated: the reliability table at its
 first full labels ran 96.7 pt past the text block, so each limit state now carries a short label
 for the table beside the full one for the artifact and the summary. The zero count cell was the
 other half of that width, and it now prints as a bound at the resolution of the sample rather
 than as a parenthetical, which is both narrower and more accurate.
+
+**One defect shipped inside this phase's own commits and is logged.** The density figure inferred
+which side of each threshold was the failure region from where the threshold sat relative to the
+median, which is backwards for a below type limit state by construction, so all three panels
+shaded the region where the member passes. Nothing but rendering the figure and looking at it
+would have caught it, and the regression test now reads the vertices of the shaded polygon, which
+is the closest a test gets to looking: 2 failed of 3 with the heuristic restored, 3 passed after.
+The direction is an argument now, taken from the limit state declaration that already carried it.
+Five figure labels also carried LaTeX spacing escapes, which matplotlib prints literally, so a
+legend read "47 backslash comma backslash percent"; escapes belong in the caption, which LaTeX
+typesets.
 
 **What P8 inherits.** A validity domain that excludes 46.6 percent of the input distribution's
 mass, which the UI has to shade rather than mention, and a reliability panel whose honest default
