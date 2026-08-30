@@ -82,6 +82,12 @@ from ufem.plotting.registration import (  # noqa: E402
     scree,
     warp_family,
 )
+from ufem.plotting.sensitivity import (  # noqa: E402
+    crossover_annotation,
+    functional_bands,
+    q2_gate,
+    sobol_agreement,
+)
 from ufem.plotting.style import (  # noqa: E402
     C_BAND,
     C_INK_2,
@@ -103,6 +109,15 @@ from ufem.register import (  # noqa: E402
     curve_matrix,
 )
 from ufem.register import STAGE_NAME as REGISTER_STAGE  # noqa: E402
+from ufem.sensitivity import (  # noqa: E402
+    FUNCTIONAL_INDICES_PARQUET,
+    GP_INDICES_PARQUET,
+    INPUT_MATH,
+    PCE_INDICES_PARQUET,
+    SENSITIVITY_JSON,
+    target_label,
+)
+from ufem.sensitivity import STAGE_NAME as SENSITIVITY_STAGE  # noqa: E402
 from ufem.validate import BASELINES_JSON, SCALAR_PREDICTIONS_PARQUET  # noqa: E402
 from ufem.validate import STAGE_NAME as VALIDATE_STAGE  # noqa: E402
 
@@ -639,6 +654,103 @@ def main() -> int:
             stage: calibration["pit_softening"][SIGNAL_FORCE][stage]["outer_mass"]
             for stage in ("before", "after")
         },
+    }
+
+    # ------------------------------------------------------------------
+    # Phase P6: global sensitivity. Three figures, and the first of them is the phase's own
+    # result rather than an illustration of it: the Q2 gate of build spec 12.1 decides what
+    # the other two are allowed to be read as, so it is drawn first and read first.
+    sensitivity_dir = _stage(SENSITIVITY_STAGE, digest)
+    sensitivity = json.loads(
+        (sensitivity_dir / SENSITIVITY_JSON).read_text(encoding="utf-8")
+    )
+    pce_frame = pd.read_parquet(sensitivity_dir / PCE_INDICES_PARQUET)
+    gp_frame = pd.read_parquet(sensitivity_dir / GP_INDICES_PARQUET)
+    functional_frame = pd.read_parquet(sensitivity_dir / FUNCTIONAL_INDICES_PARQUET)
+    sensitivity_targets = list(sensitivity["context"]["targets"])
+    sensitivity_headline = list(sensitivity["context"]["headline"])
+    levels = {
+        name: sensitivity["targets"][name]["pce"]["publication_level"]
+        for name in sensitivity_targets
+    }
+
+    print("fig_sensitivity_gate.pdf")
+    save_figure(
+        q2_gate(
+            np.array(
+                [
+                    sensitivity["targets"][name]["pce"]["q2_corrected"]
+                    for name in sensitivity_targets
+                ]
+            ),
+            np.array(
+                [
+                    sensitivity["targets"][name]["pce"]["explainable_variance_ceiling"]
+                    for name in sensitivity_targets
+                ]
+            ),
+            [target_label(name) for name in sensitivity_targets],
+            (
+                float(sensitivity["context"]["q2_publish_rankings"]),
+                float(sensitivity["context"]["q2_publish_values"]),
+            ),
+        ),
+        OUT / "fig_sensitivity_gate.pdf",
+    )
+
+    print("fig_sobol_agreement.pdf")
+    save_figure(
+        sobol_agreement(
+            pce_frame,
+            gp_frame,
+            sensitivity_headline,
+            list(FEATURE_ORDER),
+            {name: short_labels.get(name, name) for name in sensitivity_headline},
+            {name: INPUT_MATH[name] for name in FEATURE_ORDER},
+            levels,
+        ),
+        OUT / "fig_sobol_agreement.pdf",
+    )
+
+    print("fig_functional_indices.pdf")
+    amplitude_level = sensitivity["functional"]["amplitude"]["publication_level"]
+    save_figure(
+        functional_bands(
+            functional_frame,
+            "amplitude",
+            list(FEATURE_ORDER),
+            {name: INPUT_MATH[name] for name in FEATURE_ORDER},
+            "Mean displacement coordinate $\\bar{U}_2$ [mm]",
+            amplitude_level,
+        ),
+        OUT / "fig_functional_indices.pdf",
+    )
+
+    amplitude_rows = functional_frame.loc[
+        (functional_frame["block"] == "amplitude")
+        & functional_frame["usable"].astype(bool)
+    ].sort_values("u_mm")
+    RESULTS["sensitivity"] = {
+        "gate_outcome": sensitivity["gate_outcome"],
+        "publication_counts": sensitivity["publication_counts"],
+        "q2": {
+            name: sensitivity["targets"][name]["pce"]["q2_corrected"]
+            for name in sensitivity_targets
+        },
+        "explainable_ceiling": {
+            name: sensitivity["targets"][name]["pce"]["explainable_variance_ceiling"]
+            for name in sensitivity_targets
+        },
+        "agreement": {
+            "n_rows": sensitivity["agreement"]["n_rows"],
+            "n_agree": sensitivity["agreement"]["n_agree"],
+        },
+        "amplitude_crossover_mm": crossover_annotation(
+            amplitude_rows["u_mm"].to_numpy(dtype=float),
+            amplitude_rows["S_c_nom_top_mm"].to_numpy(dtype=float),
+            amplitude_rows["S_Fcm_MPa"].to_numpy(dtype=float),
+        ),
+        "amplitude_usable_stations": int(len(amplitude_rows)),
     }
 
     RESULTS["config_sha256"] = digest
