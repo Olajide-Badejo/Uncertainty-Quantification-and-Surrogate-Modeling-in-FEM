@@ -69,11 +69,11 @@ def repo_root_from_here() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def load_stage(stage_name: str) -> Callable[..., Any]:
-    """Import a stage's ``run`` callable lazily, so an unbuilt stage costs nothing."""
+def load_stage_module(stage_name: str) -> Any:
+    """Import a stage's module lazily, or raise ``NotImplementedError`` naming its phase."""
     module_name, phase = STAGES[stage_name]
     try:
-        module = importlib.import_module(module_name)
+        return importlib.import_module(module_name)
     except ModuleNotFoundError as err:
         if err.name is not None and not module_name.startswith(err.name):
             raise
@@ -81,7 +81,13 @@ def load_stage(stage_name: str) -> Callable[..., Any]:
             f"stage {stage_name!r} is not implemented yet: {module_name} arrives in phase "
             f"{phase}. See docs/BUILD_SPEC.md section 22."
         ) from err
-    run = getattr(module, "run", None)
+
+
+def load_stage(stage_name: str) -> Callable[..., Any]:
+    """Import a stage's ``run`` callable lazily, so an unbuilt stage costs nothing."""
+    module_name, phase = STAGES[stage_name]
+    module = load_stage_module(stage_name)
+    run: Callable[..., Any] | None = getattr(module, "run", None)
     if run is None:
         raise NotImplementedError(
             f"stage {stage_name!r} has module {module_name} but no run() entry point; "
@@ -97,20 +103,45 @@ def stage_code_file(stage_name: str) -> Path:
 
 
 def is_cache_hit(root: Path, config: Config, stage_name: str, digest: str) -> bool:
-    """True when the stage directory holds a valid manifest with a matching cache key."""
+    """True when the stage's outputs are still valid for the inputs that are on disk now.
+
+    Four things have to agree, and the fourth is the one that was wrong until 2026-08-30: the
+    manifest exists, every recorded output still hashes to what it did, the recorded cache key
+    is present, and the stage's declared inputs **hashed afresh from disk** reproduce that key.
+    Recomputing the key from the input hashes the manifest itself recorded compares a number
+    against a copy of itself, so it agrees no matter what happened upstream, and an edited or
+    regenerated upstream artifact was served stale until someone passed ``--force``. Each stage
+    exposes ``declared_input_hashes`` for this, and a stage without one is an error rather than
+    a stage that gets trusted (ground rule 8).
+    """
     artifact_root = root / config.pipeline.paths.artifact_root
     directory = stage_dir(artifact_root, stage_name, digest)
     if not (directory / "manifest.json").is_file():
         return False
     if not verify_manifest(directory):
         return False
-    recorded = load_manifest(directory).get("extra", {}).get("cache_key")
+    manifest = load_manifest(directory)
+    recorded = manifest.get("extra", {}).get("cache_key")
     if recorded is None:
         return False
     code_file = stage_code_file(stage_name)
     if not code_file.is_file():
         return False
-    expected = cache_key(stage_name, code_file, digest, load_manifest(directory)["inputs"])
+    module = load_stage_module(stage_name)
+    declare = getattr(module, "declared_input_hashes", None)
+    if declare is None:
+        raise NotImplementedError(
+            f"stage {stage_name!r} has no declared_input_hashes(), so its cache cannot be "
+            "checked against the artifacts it actually reads. Add one beside its run()."
+        )
+    try:
+        current = declare(root, config, digest)
+    except FileNotFoundError as err:
+        print(f"[cache miss] {stage_name}: an input is no longer on disk: {err}")
+        return False
+    if current != manifest["inputs"]:
+        return False
+    expected = cache_key(stage_name, code_file, digest, current)
     return bool(recorded == expected)
 
 

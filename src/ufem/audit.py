@@ -53,6 +53,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from ufem.config import FEATURE_ORDER, Config, features
+from ufem.grid import QOI_PARQUET as GRID_QOI_PARQUET
+from ufem.grid import STAGE_NAME as GRID_STAGE
 from ufem.ingest import DESIGN_PARQUET, LOAD_PARQUET
 from ufem.ingest import STAGE_NAME as INGEST_STAGE
 from ufem.manifest import cache_key, sha256_file, stage_dir, write_manifest
@@ -890,6 +892,39 @@ def _load_ingest(root: Path, config: Config, config_sha256: str) -> tuple[Path, 
     return directory, hashes
 
 
+def _grid_qoi_path(root: Path, config: Config, config_sha256: str) -> Path:
+    """The QoI table the importance weighting study reweights, or a raise naming the fix."""
+    path = stage_dir(
+        root / config.pipeline.paths.artifact_root, GRID_STAGE, config_sha256
+    ) / GRID_QOI_PARQUET
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"the importance weighting study needs {path}, which does not exist. "
+            "Run `ufem run grid` before `ufem run audit`, or run `ufem run all`: the study "
+            "reweights the QoI table the grid stage extracts from the surviving runs."
+        )
+    return path
+
+
+def declared_input_hashes(
+    repo_root: Path | str, config: Config, config_sha256: str
+) -> dict[str, str]:
+    """Hash this stage's declared inputs as they are on disk right now (see ``ufem.runner``).
+
+    Audit reads three things: the ingest artifacts, the committed 2026-08-28 audit reference
+    it is gated against, and the grid stage's QoI table. All three are declared here in the
+    same order ``run`` records them, so the two can never disagree.
+    """
+    root = Path(repo_root)
+    _ingest_dir, hashes = _load_ingest(root, config, config_sha256)
+    _reference, _summary, reference_hashes = _load_reference(root)
+    return {
+        **hashes,
+        **reference_hashes,
+        GRID_QOI_PARQUET: sha256_file(_grid_qoi_path(root, config, config_sha256)),
+    }
+
+
 def _write_json(payload: dict[str, Any], path: Path) -> Path:
     """Write one JSON artifact with sorted keys, so a rerun is byte comparable."""
     path.write_text(
@@ -937,16 +972,8 @@ def run(repo_root: Path | str, config: Config, config_sha256: str) -> Path:
 
     domain = build_validity_domain(model, validity, config, model_sha256)
 
-    grid_qoi_path = stage_dir(
-        root / config.pipeline.paths.artifact_root, "grid", config_sha256
-    ) / "qoi.parquet"
-    if not grid_qoi_path.is_file():
-        raise FileNotFoundError(
-            f"the importance weighting study needs {grid_qoi_path}, which does not exist. "
-            "Run `ufem run grid` before `ufem run audit`, or run `ufem run all`: the study "
-            "reweights the QoI table the grid stage extracts from the surviving runs."
-        )
-    input_hashes["qoi.parquet"] = sha256_file(grid_qoi_path)
+    grid_qoi_path = _grid_qoi_path(root, config, config_sha256)
+    input_hashes[GRID_QOI_PARQUET] = sha256_file(grid_qoi_path)
     qoi = pd.read_parquet(grid_qoi_path)
     weighting = importance_weighting_study(qoi, model, config)
 

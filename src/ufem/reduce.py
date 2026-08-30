@@ -264,6 +264,13 @@ def _load_inputs(
     return register_dir, grid_dir, hashes
 
 
+def declared_input_hashes(
+    repo_root: Path | str, config: Config, config_sha256: str
+) -> dict[str, str]:
+    """Hash this stage's declared inputs as they are on disk right now (see ``ufem.runner``)."""
+    return _load_inputs(Path(repo_root), config, config_sha256)[-1]
+
+
 def run(repo_root: Path | str, config: Config, config_sha256: str) -> Path:
     """Execute the reduce stage and return its artifact directory."""
     started = _time.perf_counter()

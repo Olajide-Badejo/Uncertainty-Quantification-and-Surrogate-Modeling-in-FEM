@@ -314,6 +314,18 @@ def _load_ingest(root: Path, config: Config, config_sha256: str) -> tuple[Path, 
     return directory, hashes
 
 
+def declared_input_hashes(
+    repo_root: Path | str, config: Config, config_sha256: str
+) -> dict[str, str]:
+    """Hash this stage's declared inputs as they are on disk right now.
+
+    The runner's cache check calls this rather than trusting the hashes the stage recorded
+    the last time it ran, which is the only way a changed upstream artifact can be noticed
+    without ``--force``. Raises if an input is missing, exactly as ``run`` would.
+    """
+    return _load_ingest(Path(repo_root), config, config_sha256)[1]
+
+
 def run(repo_root: Path | str, config: Config, config_sha256: str) -> Path:
     """Execute the grid stage and return its artifact directory."""
     started = _time.perf_counter()
