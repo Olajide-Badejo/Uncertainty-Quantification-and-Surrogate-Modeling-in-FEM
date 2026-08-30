@@ -358,6 +358,119 @@ over 198 samples is not a comfortable ratio for independent GPs, and reducing th
 harder than 99 percent is the obvious lever if it becomes a problem. That is a P4 decision and
 is deliberately not pre empted here.
 
+## 2026-08-30, Phase P4: Gaussian process surrogate, baselines, fold honest validation
+
+### The Karcher mean of the warps was being computed with an undocumented smoothing pass, and it cost accuracy and stability
+
+`ufem.register.warp_tangent_vectors` calls `fdasrsf.utility_functions.SqrtMean(gam)`, and the
+library defaults that call to `smooth=True`: a `UnivariateSpline(..., s=1e-4)` fit to each warp
+before it is differentiated, with the result clipped at zero. This project's own inverse of
+the same map, `ufem.surrogate.srsf_curve`, applies no smoothing at all (it is the exponential
+map followed by exact quadrature), so the forward and inverse were not matched pairs, and the
+round trip test caught it: `tests/test_surrogate.py::TestSquareRootSlopeRepresentation
+::test_the_round_trip_recovers_the_family_it_came_from` crashed with an `IndexError` inside
+`fdasrsf`'s own Karcher mean iteration, one past the end of its fixed 500 entry log array,
+because the smoothed psi family never converged to the iteration's `1e-8` tolerance.
+
+Measured rather than assumed: 14 seeded synthetic monotone families, round tripped through
+`SqrtMean` at both settings. Under the library default, `smooth=True`, 6 of the 14 families
+never converged at all (the crash above) and the other 8 gave a round trip error of 1 to 5
+percent, ten to a hundred times this representation's discretization floor. Under
+`smooth=False`, all 14 converged, with errors of 1.5 to 4.7e-3, consistent across seeds. The
+fix is one line: `warp_tangent_vectors` now calls `SqrtMean(gam.T, smooth=False)`. This is a
+defect in how the project was calling a library, not a tolerance to widen around a flaky test,
+and it is recorded in `docs/DEFECT_LOG.md`.
+
+Consequence, measured rather than assumed: refitting the register and reduce stages under the
+fix leaves the amplitude block exactly where P3 measured it (5 components, the ablation's
+three metrics reproduce to the digit), because the amplitude family and its warps come from
+`srsf_align`, which this fix does not touch. The phase block, which is built from the tangent
+vectors this fix does touch, moves slightly: still 63 components at 99 percent, but the
+reconstruction error moves from a median of 9.22 percent to 9.98 percent. A worse number, not
+a better one, and it ships anyway, because the alternative is a representation that crashes on
+a fraction of plausible inputs and quietly loses accuracy on the rest.
+
+### The phase and displacement blocks are capped, and the cost is measured in the manifest
+
+The reduce stage's own 99 percent target asks for 63 phase components and, for the new
+displacement block introduced at this phase, 18. Fitting that many independent Gaussian
+processes on 198 samples is noise chasing: a component past the leading handful carries well
+under one percent of its block's variance, and a GP fitted to it is fitting mostly prior.
+`surrogate.phase_max_components` and `surrogate.displacement_max_components` cap both blocks,
+in this configuration at 8 and 10, reached by a `phase_variance_target` /
+`displacement_variance_target` of 0.90 each. Measured, the fitted ranks carry 77.1 percent and
+83.6 percent of their blocks' variance respectively; what the cap leaves behind is not
+discarded, it is carried forward as reconstruction residual variance in every predicted curve,
+per build spec 10.4, and both numbers are in the surrogate stage's manifest rather than only
+in this paragraph.
+
+### The noise hyperprior is centered on what the noise means, not on the solver's resolution
+
+Build spec 10.3 suggests centering the fitted noise's hyperprior on the solver's numerical
+resolution. Tried first, centered near `1e-4`: 36 of the 45 targets converged to a lengthscale
+pinned at its lower bound and a noise near `1.8e-6`, which is the interpolate the scatter
+failure of build spec 5.2, reproduced. The center is now the share of a standardized target's
+variance the three inputs are not expected to explain, `noise_prior_median_variance = 0.1`,
+which is what a nugget actually is on a censored campaign with two covers and a strength as
+the only predictors. The fit then leaves that center by a factor of 25 in both directions
+across the 45 targets, so the center is a center and not a floor: ground rule 4 is satisfied
+by measurement, and `TestInterpolation::test_a_noiseless_smooth_target_is_fitted_with_a_small
+_noise` is the test that would catch a regression back to a floor.
+
+### The lengthscale lower bound is 0.11, not the spec's suggested 0.05
+
+Build spec 10.3 justifies the lower bound by the minimum site spacing of the design, and its
+own suggested value of 0.05 is below that spacing on this campaign: the minimum nearest
+neighbour distance over the 198 standardized design points is 0.1138, with a fifth percentile
+of 0.1565. A lengthscale under the closest pair in the design describes correlation the design
+cannot observe, which is exactly the mechanism of the interpolate the scatter failure above.
+0.11 is the measured minimum spacing rounded down, and
+`TestTheFittedArtifact::test_the_lengthscale_lower_bound_is_not_below_the_design_site_spacing`
+asserts the relationship rather than the literal number, so a redesigned campaign keeps the
+bound honest automatically.
+
+### The fold harness is 10 grouped folds, not 198 leave one out, and the arithmetic is recorded
+
+Build spec 16.3 requires the registration reference, both principal component bases, and every
+standardization statistic recomputed inside every fold. For curves that is expensive: the SRVF
+registration alone costs about 13 seconds on the full 198, so a leave one out fold harness
+would cost 198 registrations, about 43 minutes, for the surrogate alone and well over 3 hours
+once the four baselines go through the same harness. Ten grouped folds cost ten registrations,
+and the measured wall time of the fold harness is about 10 minutes end to end (595 seconds of
+folds against 0.5 seconds for the closed form scalar leave one out, which needs no refit). The
+scalars keep the exact leave one out, because nothing about a scalar target needs the
+registration refit; only the curve level comparison takes the grouped compromise, and it is
+exactly the compromise build spec 16.3 pre authorizes. The leak test of the same section
+applies to `ufem.validate.make_folds` regardless of which harness calls it.
+
+### A measured side effect: `fdasrsf.fdawarp.srsf_align` silently parallelizes past 100 curves
+
+`register.srsf_register` calls `srsf_align(parallel=False)` deliberately, for the determinism
+reasoning in its own docstring. The library does not honor that argument unconditionally: it
+overrides `parallel` to `True` whenever the family has more than 100 curves or more than 500
+time points, regardless of what the caller passed. Every registration in this project's
+production path and every non trivial validation fold exceeds 100 curves, so this override is
+live throughout. It was not designed around; it is recorded here because it explains the fold
+harness's wall clock (a joblib process pool spawns per registration, and a Windows `loky`
+worker reimports the scientific stack, which costs real time and memory) and because
+determinism survives it only because joblib's `Parallel` returns results in submission order
+regardless of completion order: the forced double run of the surrogate stage (build spec 17.2)
+reproduces every output byte for byte with this override active, which is the measurement that
+matters, not the absence of the override.
+
+### The quadratic chaos baseline has 10 terms, not the 15 build spec 10.5 names
+
+Build spec 10.5 calls the baseline "the full quadratic PCE (15 terms at d = 3, OLS)" and then
+gives the wrong count for its own d: the number of multi indices of total degree at most two
+in $d$ dimensions is $\binom{d+2}{2}$, which is 15 at $d = 4$ and 10 at $d = 3$. The feature
+contract of build spec 9.2 has three inputs, because the elastic modulus is derived rather
+than independent (Section 9.1), so the baseline that is actually full quadratic in this
+project's three inputs has 10 terms. This is an arithmetic slip in the spec's own parenthetical,
+not a reduced baseline: `hermite_multi_indices(3, 2)` enumerates every multi index of total
+degree at most two over three variables, which is what "full quadratic" means, and
+`tests/test_baselines.py::TestQuadraticChaos::test_the_term_count_is_the_full_quadratic
+_expansion_in_three_inputs` pins both the count and the reasoning.
+
 <!-- BEGIN RESOLVED VERSIONS -->
 
 ### Resolved version matrix, 2026-08-30

@@ -27,8 +27,8 @@ Results are injected here from the artifact manifests at Phase P10. Nothing is c
 | P0 | Scaffold, config, manifests, runner, lint, CI | Complete |
 | P1 | Ingest and common grid | Complete |
 | P2 | Audit, censoring model, first compiled report | Complete |
-| P3 | Registration and reduction | Complete at this commit |
-| P4 | Gaussian process surrogate, baselines, validation | Not started |
+| P3 | Registration and reduction | Complete |
+| P4 | Gaussian process surrogate, baselines, validation | Complete at this commit: the surrogate beats all four baselines out of sample on the four headline scalar quantities of interest (peak load, displacement at peak, initial stiffness, absorbed energy); on the whole reconstructed curve the three non trivial baselines edge it out, and the table says so |
 | P5 | Conformal calibration, scalar and functional | Not started |
 | P6 | Sensitivity | Not started |
 | P7 | Propagation and reliability | Not started |
@@ -57,8 +57,12 @@ first; if it does not agree with what you expect, nothing downstream is worth re
 `ufem run all` walks the stages in order. A stage whose cache key is unchanged prints
 `[cache hit]` and is skipped; `--force` reruns it. Stages that a later phase will implement
 raise with the phase named, so at this commit `run ingest`, `run grid`, `run audit`,
-`run register` and `run reduce` do real work and `run all` then reports that `surrogate`
-arrives in P4 and exits nonzero. That is the intended behavior, not a failure of the install.
+`run register`, `run reduce`, `run surrogate` and `run validate` do real work and `run all`
+then reports that `calibrate` arrives in P5 and exits nonzero. That is the intended behavior,
+not a failure of the install. The full Gaussian process fit is a single threaded, under 60
+second cost (`ufem run surrogate`); the grouped fold validation harness (`ufem run validate`)
+recomputes the registration and every reduction basis inside each of its 10 folds and costs
+several minutes, per the arithmetic in `docs/DESIGN_DECISIONS.md`.
 
 Two products of this phase are scripts rather than stages, and both read the artifact store:
 
