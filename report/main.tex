@@ -412,6 +412,7 @@ reuse caveat that build spec 11.1 asks to be stated costs nothing measurable her
 follow at a smaller $n$, or with a kernel whose hyperparameters moved more between folds.
 
 \subsection{Curves: simultaneous sup norm bands}
+\label{sec:functionalbands}
 For the curve outputs the band has to hold at every abscissa at once, or a reader is invited to
 read a pointwise interval as if it were a statement about the whole response. The score is the
 worst standardized pointwise miss over the curve,
@@ -820,6 +821,268 @@ exactly the early part of any one physical curve. What it did not anticipate is 
 question would be undecidable, because the surface being decomposed does not describe the beam
 well enough for its decomposition to be about the beam. That is a better reason to have run the
 analysis than a confirmation would have been.
+
+\section{Propagation and reliability}
+\label{sec:propagation}
+The point of everything before this section is to make this one honest. A failure probability is
+the easiest number in uncertainty quantification to produce and the hardest to mean: it needs a
+sample large enough to resolve it, a surrogate whose error near the threshold is known rather
+than assumed, a threshold that is a design quantity rather than a convenient one, and a
+statement of where the model was allowed to speak. The predecessor project produced failure
+probabilities with none of those, including one against a damage threshold above the value the
+material table can reach, whose probability was therefore exactly zero for reasons that had
+nothing to do with the beam.
+
+\subsection{Two layers, kept apart}
+\label{sec:layers}
+Build specification 13.1 requires two uncertainty layers, labeled and never added. The
+\emph{aleatory} layer is \MCSamples{} draws from the input distributions of
+Section~\ref{sec:design} pushed through the mean surrogate: the spread the beam population
+would show if the surrogate were exact. The \emph{epistemic} layer is the surrogate's own
+uncertainty, drawn as \MCPosteriorDraws{} samples from the calibrated predictive distribution
+at each of \MCEpistemicSubsample{} seeded subsampled input draws. Calibrated is the operative
+word: the predictive standard deviation is the fitted one multiplied by the variance scaling
+factor Section~\ref{sec:calibration} measured against held out data, so it is a width that was
+checked rather than asserted. For the peak load the epistemic standard deviation is
+\PropPeakEpistemicShare{} times the aleatory one, which is the honest statement that the
+surrogate's uncertainty about a single beam is a substantial fraction of the variation between
+beams.
+
+The layers are separated in the code by construction rather than by convention: the epistemic
+layer is a function of a mean and a standard deviation, so passing it a zero standard deviation
+returns the mean at every draw, exactly, and a test asserts it. That test is the machine
+checkable form of binding law 1, since a layer that returned a small nonzero spread from a model
+claiming no uncertainty would be manufacturing the thing this project exists not to manufacture.
+
+Sampling is plain Monte Carlo rather than a low discrepancy sequence, deliberately. Build
+specification 13.2 asks for a binomial standard error beside every failure probability, and that
+standard error is a statement about independent draws; a randomized quasi Monte Carlo estimate
+would need a replication based error instead, and two numbers in one table would then mean
+different things. One root \texttt{SeedSequence} is spawned into four children, one each for the
+input sample, the epistemic subsample, the posterior draws and the curve fan, so no two products
+share a stream and none of them depends on the sample size. The Monte Carlo through the Gaussian
+processes is matrix algebra: one evaluation of the prior cross covariance between a chunk of
+query points and the \NValid{} training points yields the posterior mean, the posterior variance
+and all \NValid{} leave one out cross predictions the interval of Section~\ref{sec:bound} needs,
+so the whole propagation costs seconds and its memory does not grow with the sample size.
+
+\subsection{Where the model is allowed to speak}
+\label{sec:domainmass}
+\OutOfDomainPct\,\% of the Monte Carlo mass falls outside the validity domain of
+Section~\ref{sec:domain}. That is the largest single qualification on everything in this
+section, and it is not a defect of the propagation: it is the censoring of Section~\ref{sec:censoring}
+seen from the other end. Roughly half the design failed to converge, the completion model puts
+the boundary at $P = \DomainThreshold{}$, and a population sampled from the declared input
+distributions therefore lands outside that boundary about half the time. The number appears in
+every table and on every figure of this section rather than in a footnote, and the reliability
+table also reports each probability restricted to the draws inside the domain, so the size of
+the question the censoring leaves open is visible rather than argued about.
+
+\subsection{The peak load threshold, revisited}
+\label{sec:characteristic}
+Build specification 13.2 asks for the peak load limit state to be set by characteristic value
+logic rather than by a multiple of a standard deviation, and the threshold committed with the
+configuration skeleton at the start of the project was a placeholder of \PlaceholderPeakKN\,kN
+carrying a comment saying so. The characteristic value is the \CharacteristicLevel th percentile
+of the propagated capacity distribution, which this stage measures at \CharacteristicPeakKN\,kN.
+The placeholder sat \PlaceholderPeakGapPct\,\% below it, which is a different limit state rather
+than a rounding, so the configured threshold was revised once to \ConfiguredPeakKN\,kN, the
+measured characteristic value rounded down to the nearest 100~N. The revision changed the
+configuration hash and every artifact downstream of ingest was regenerated, which is the
+mechanism working rather than a cost to be avoided. The stage recomputes the characteristic
+value on every run and records its gap to the configured number, \CharacteristicGapPct\,\%, and
+a test fails if the two drift apart again.
+
+This makes the peak load limit state partly definitional at the aleatory layer: a threshold set
+at the 5th percentile has a failure probability of about 0.05 by construction, and the measured
+\PfPeak{} says the arithmetic is consistent. Its informative content is not the point estimate.
+It is the gap between that estimate and the surrogate aware bound below, which is what surrogate
+error does to a probability at a threshold sitting in the thick part of the distribution.
+
+\subsection{Limit states, with the bound that makes them honest}
+\label{sec:bound}
+Table~\ref{tab:reliability} is the reliability result. Each row carries a point estimate with
+its binomial standard error, a conservative bound, and the out of domain mass fraction, because
+none of the three means anything without the other two.
+
+The bound is the answer to a question a point estimate cannot answer: what the surrogate's own
+error does to a probability computed from it. A draw counts as a failure whenever its calibrated
+\MCBandLevel\,\% jackknife+ interval crosses the threshold, so the bound asks not where the mean
+prediction falls but where the prediction could fall without contradicting the calibration of
+Section~\ref{sec:calibration}. It is the level that calibration measured coverage at, which is
+why it is that level and not a rounder one. The residual capacity row is where the bound earns
+its place most clearly: the mean surrogate never predicts a softening ratio below one half in
+\MCSamples{} draws, so the point estimate is zero and would, on its own, read as a member that
+cannot fail this criterion. The bound says otherwise, and the bound is the number a reader
+should carry away.
+
+\begin{table}[tbp]
+\centering
+\caption{Reliability results. $P_f$ is the aleatory layer through the mean surrogate over
+\MCSamples{} draws, with its binomial standard error. The conservative column counts a failure
+whenever the calibrated \MCBandLevel\,\% jackknife+ interval at that draw crosses the threshold,
+which is the surrogate aware bound of build specification 13.2. The final column is the share of
+the Monte Carlo mass outside the validity domain, identical by construction across rows and
+repeated on each because no probability here should be read without it. A row where no draw
+failed is printed as a bound at the resolution of the sample rather than as a probability of
+zero, which is a statement about the sample and not about the beam. Unmodeled error, not
+contained in any of these numbers: the response of this campaign differs by a median of
+\PropRoughnessPct\,\% of the peak load standard deviation between the \PropRoughnessPairs{}
+closest nearest neighbour pairs of the training design, so the surface being propagated is
+rough at the scale the design resolves. No probability below $\PfFloor$ is claimed.}
+\label{tab:reliability}
+\footnotesize
+\input{tables/reliability.tex}
+\end{table}
+
+\begin{figure}[tbp]
+\centering
+\includegraphics[width=\linewidth]{fig_qoi_densities.pdf}
+\caption{Propagated densities of the three limit state quantities with their thresholds marked
+and the failure region shaded. The filled curve is the aleatory layer and the dashed one the
+predictive layer of Section~\ref{sec:layers}; the two are drawn separately because adding them
+on a page is the same mistake as adding them in a number.}
+\label{fig:qoidensities}
+\end{figure}
+
+\subsection{What is not claimed}
+\label{sec:floor}
+No failure probability below about $\PfFloor$ is claimed by this report. The limit is not the
+Monte Carlo sample size, which resolves \MCSamples{} draws and therefore $10^{-5}$ per draw. It
+is the training set: \NValid{} converged runs over three inputs, on a response
+Section~\ref{sec:sensdiagnosis} measured to be rough at the design's own resolution, do not
+determine the tail of a response surface, and a smooth metamodel extrapolating into that tail
+returns a number with no evidence under it. Rarer events need the active learning enrichment of
+the follow up campaign, where new finite element runs are placed where the limit state actually
+is rather than where the space filling design happened to put them.
+
+The residual capacity row's point estimate sits below that floor, which is exactly the situation
+the floor exists to describe rather than to hide.
+
+\subsection{The response family}
+Figure~\ref{fig:envelope} is the propagated curve fan: \MCCurveSubsample{} predicted load
+displacement curves summarized by their pointwise median and their 50 and 90 percent envelopes.
+It is a population spread and not a band on any one prediction. The distinction matters enough
+to be drawn differently: the simultaneous conformal band of Section~\ref{sec:functionalbands}
+describes where one new run's curve will fall and carries measured coverage, while this fan
+describes where the beams themselves land under the input distributions.
+
+\begin{figure}[tbp]
+\centering
+\includegraphics[width=\linewidth]{fig_curve_envelope.pdf}
+\caption{The propagated load displacement family: pointwise median and envelopes over
+\MCCurveSubsample{} draws through the mean surrogate. A population spread, not a predictive
+band.}
+\label{fig:envelope}
+\end{figure}
+
+\subsection{The analytic cross check}
+\label{sec:analytic}
+Build specification 13.4 requires an independent model. The predecessor project's physics
+informed analytical script is reimplemented cleanly for it: same beam, same three input
+distributions, same seeded generator, no surrogate anywhere in it. Its geometry survived the
+reimplementation and its mechanics did not. The salvaged script evaluated a propped cantilever
+deflection formula that belongs to no standard case and to a structural system this model does
+not have, under a fixed 50~kN load, divided by an invented strength factor applied on top of a
+modulus that is already a function of the strength. What is kept is the idea and the section:
+the member of Section~\ref{sec:model} is statically determinate, its bending moment is largest
+at the roller with magnitude $P a$ over the 800~mm overhang, the whole member is
+in hogging, and the tension reinforcement is therefore the top layer, whose distance from the
+compression face at the soffit is exactly the top cover. The capacity is a plane section
+rectangular stress block, and the peak load is that capacity divided by the lever arm.
+
+The stated model error is \AnalyticModelErrorPct\,\%, declared before the comparison was run.
+A stress block against a nonlinear finite element analysis of the same section is conventionally
+good to about ten percent, and four named effects widen it here without cancelling: the block
+ignores the concrete tensile contribution, which is not small in a model that defines tension
+softening without a fracture energy; the finite element peak occurs at about 11~mm
+of imposed displacement, past the plateau of the damaged plasticity compression response; the
+mesh is coarse for a bending gradient; and the viscoplastic regularization adds a small rate
+dependent overshoot.
+
+The verdict is split, and the split is the finding. The analytic median is
+\AnalyticMedianKN\,kN against the surrogate's \SurrogateMedianKN\,kN, a ratio of
+\AnalyticMedianRatio{}, so the central tendency \AnalyticCentralVerdict{} within the stated
+model error. The dispersion does not: the analytic coefficient of variation is \AnalyticCoV{}
+against \SurrogateCoV{}, a factor of \AnalyticDispersionRatio{}, and the analytic 5th percentile
+sits \AnalyticLowerRatio{} times the surrogate's, outside the same tolerance the median cleared.
+The two distributions in Figure~\ref{fig:analytic} agree about where the capacity is and disagree
+about how much it varies.
+
+\subsection{Diagnosing the disagreement}
+The elasticities localize it exactly, and this is why they are in Table~\ref{tab:analytic}
+rather than only the moments. Regressing the logarithm of the measured peak load on the
+logarithms of the three inputs over the \NValid{} runs gives \CampaignElasticityFcm{} for the
+strength, \CampaignElasticityCTop{} for the top cover and \CampaignElasticityCBot{} for the
+bottom cover, at a fit $R^2$ of \CampaignElasticityRSq{}. The analytic model gives
+\AnalyticElasticityFcm{}, \AnalyticElasticityCTop{} and \AnalyticElasticityCBot{}. Two of the
+three agree closely. The geometric sensitivity is reproduced almost exactly, which is a strong
+statement that the structural idealization is right: the top cover is the effective depth in
+both, and both say so with the same number.
+
+The strength elasticity does not agree, and it is not a small disagreement. A section whose
+tension steel yields carries its reinforcement force whatever the concrete strength is, so the
+strength enters an under reinforced flexural capacity only through the depth of the compression
+block, and the analytic elasticity of \AnalyticElasticityFcm{} is what that mechanism implies.
+The campaign's \CampaignElasticityFcm{} is more than an order of magnitude larger, and it is
+close to the elasticity of the finite element model's own tensile strength scaling,
+$((f_{cm} - 8)/20)^{2/3}$, which is \AnalyticTensionElasticity{} at the mean strength, and to
+the compression scaling's elasticity of one. The peak load of the inherited campaign is
+governed by the concrete constitutive response and not by reinforcement yielding.
+
+That is a statement about the finite element model rather than about either propagation, and it
+was predicted by build specification 6.2 before any of this was measured: the campaign defines
+tension softening without fracture energy regularization while the strength varies sample to
+sample, and it never ran the mesh convergence study its own protocol required. Under that
+combination the peak is set by a localization pattern whose strength dependence is the material
+table's rather than the section's. The same defect is what Section~\ref{sec:sensdiagnosis}
+measured from the other direction as roughness between neighbouring designs. Two phases, two
+methods, one cause.
+
+Two further checks are consistent with that reading and are recorded here rather than left as
+loose ends. Evaluated at each of the \NValid{} training designs, the analytic capacity correlates
+with the measured peak load at \AnalyticPearson{} and overpredicts it by \AnalyticPointwiseBiasPct\,\%
+in the mean, which is the correlation a model reproducing only the geometric part of the
+variation would show. And the analytic elastic stiffness brackets the measurement without being
+tuned to it: \AnalyticStiffnessGross\,kN/mm on the gross section and
+\AnalyticStiffnessCracked\,kN/mm on the fully cracked transformed section, against a campaign
+mean initial stiffness of \CampaignStiffnessMean\,kN/mm, which is where a secant stiffness
+measured over a range that begins above the cracking load of \AnalyticCrackingLoadKN\,kN belongs.
+
+\begin{table}[tbp]
+\centering
+\caption{The analytic cross check of build specification 13.4. The upper block compares the two
+propagated peak load distributions statistic by statistic; the lower block compares the
+logarithmic elasticities of each model with respect to the three inputs, measured on the
+\NValid{} runs for the campaign and by central difference at the median input for the analytic
+model. The geometric elasticities agree and the strength elasticity does not, which localizes
+the disagreement to the concrete constitutive path.}
+\label{tab:analytic}
+\footnotesize
+\input{tables/analytic_cross_check.tex}
+\end{table}
+
+\begin{figure}[tbp]
+\centering
+\includegraphics[width=\linewidth]{fig_analytic_comparison.pdf}
+\caption{The propagated peak load: surrogate against the independent analytic mechanics model,
+with 5th, 50th and 95th percentile markers on each and the stated \AnalyticModelErrorPct\,\%
+model error shaded around the analytic median. The two agree about location and disagree about
+width.}
+\label{fig:analytic}
+\end{figure}
+
+\begin{table}[tbp]
+\centering
+\caption{The propagated distribution of every scalar quantity of interest. Quantiles are the
+aleatory layer with the Monte Carlo standard error of the 5th percentile beside them; the final
+column is the same percentile under the predictive layer, which includes the calibrated
+surrogate uncertainty. \OutOfDomainPct\,\% of the Monte Carlo mass lies outside the validity
+domain, and the roughness caveat of Table~\ref{tab:reliability} applies here too.}
+\label{tab:quantiles}
+\footnotesize
+\input{tables/propagated_quantiles.tex}
+\end{table}
 
 \section{Conclusion}
 The campaign delivered \NValid{} fully converged, softening resolved load displacement and damage histories over a three dimensional input space, with clean, information rich response statistics. It also delivered two hard lessons that the successor pipeline is built around. Half the design was lost to a biased, undiagnosed failure mode, and the response to that is neither to ignore it nor to discard the data, but to model it: a calibrated completion probability model, a validity domain derived from it that every downstream stage must consult, and a weighting study that bounds the residual bias at a few percent of the mean. And two of the nominal outputs, the fourth input and the terminal damage, carry no independent information at all, which the predecessor project propagated anyway.
