@@ -247,6 +247,54 @@ nonlinear encoder to find, and a nonlinear encoder with nothing to find is a non
 with extra parameters. If it wins here, the monotone decoder is the reason, and that would be a
 result worth carrying into Track B rather than a defeat for the pipeline.
 
+### Results, measured 2026-08-31
+
+Everything above this line was committed before `scripts/ablation_2_autoencoder.py` existed and
+is left exactly as written. Two predictions held and one was wrong, and the one that was wrong
+is the one I said in advance was the weakest.
+
+| Metric | Production | Autoencoder | Prediction | Verdict |
+|---|---|---|---|---|
+| Force curve, median out of fold relative L2 | 23.09 % | 20.46 % | autoencoder worse | **refuted** |
+| Peak load R2 off the curve | 0.711 curve, 0.717 scalar process | -0.117 | below 0.6 | **held** |
+| Damage curve, median out of fold relative L2 | 7.89 % | 20.89 % | autoencoder worse | **held** |
+
+**The force curve: refuted, exactly the way I wrote down that it could be.** The autoencoder
+reaches 20.46 percent median relative L2 against the production pipeline's 23.09 percent on the
+same ten folds. I predicted the opposite and gave the reason it might not hold: the P4 table
+already had three simple baselines beating the production pipeline at curve level, so a model
+that predicts the curve directly avoids the compounding the reconstruction pays for. That is
+what happened, and the finding belongs to the reconstruction path rather than to the
+autoencoder. It is also not a defence of the architecture, because of the next row.
+
+**The peak: held, and by a wider margin than I expected.** The peak load read off the decoded
+curve reaches an out of sample R2 of -0.117, which is worse than predicting the training mean
+peak for every run, against 0.717 for the production scalar process and 0.711 for the production
+curve read the same way. The decoded peak is biased low by 2489 N, 6.4 percent of the mean peak.
+So the autoencoder produces a curve that is closer in L2 and useless where the reliability
+analysis reads it: it is smoothing the peak away and buying L2 with the flanks. That single pair
+of numbers is the strongest argument in this whole set of ablations for the claim that a curve
+level L2 is the wrong scoreboard for this application.
+
+**The damage curve: held, by a factor of 2.6.** 20.89 percent against 7.89 percent for the
+production reduction. The monotone decoder did hold its construction, with a smallest decoded
+increment of +1.8e-3 over all 198 out of fold curves, so the salvaged idea works as advertised
+and the terminal renormalization I dropped was not load bearing. It is simply that eleven linear
+components describe this near degenerate family to 99 percent of its variance, and four
+nonlinear latents fitted by gradient descent on 178 curves do not beat that.
+
+**What this ablation supports.** Not the architecture. The autoencoder is worse where it
+matters, worse on the second signal, and better on a metric that this report now has three
+independent reasons to distrust as a summary. What it does support is the specific claim of
+build spec 10.6.2 that the predecessor's architecture, corrected, still loses at n = 198, and it
+supports it while removing every excuse: group aware folds, a fitted noise model, the three input
+contract, and a latent budget between the production amplitude rank and the number of scores the
+production pipeline actually predicts.
+
+**Cost.** 247.7 seconds total on CPU, of which 106.6 seconds is autoencoder training across the
+twenty networks and most of the rest is the 120 latent Gaussian processes. The timebox was 600
+seconds of training and it was not approached, so no epochs were cut.
+
 ## Ablation 3: five member deep ensemble, direct curve regression
 
 **Build spec 10.6.3. Prediction committed 2026-08-31, before
