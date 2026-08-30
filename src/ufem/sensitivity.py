@@ -272,6 +272,34 @@ def explainable_variance_ceiling(gp: FittedGP) -> float:
     return float(outputscale / total)
 
 
+#: How close to its configured lower bound a lengthscale has to sit before the fit is called
+#: pinned. One percent above the bound is not a fit that chose a short correlation length, it
+#: is a fit that ran into the wall the bound put there.
+PINNED_LENGTHSCALE_MARGIN = 1.01
+
+
+def lengthscale_pinned(gp: FittedGP) -> bool:
+    """True when the fit sits against its lengthscale lower bound, which voids the ceiling.
+
+    Build spec 5.2's failure mode, and the one the P4 noise hyperprior was chosen to avoid:
+    a process that cannot explain its target from the three inputs can still reach a high
+    marginal likelihood by shrinking every lengthscale to the shortest the bound allows and
+    the noise to nothing, which interpolates the scatter. Such a fit reports a nugget near zero
+    and therefore an explainable ceiling near one, which is the opposite of what it means.
+
+    So the ceiling is reported with this flag beside it, and the report reads the ceiling only
+    where the flag is false. It is not a repair and nothing is clipped: the flag says the
+    diagnostic does not apply to that row.
+
+    One pinned dimension is enough to raise it. The lower bound is not an arbitrary number: the
+    P4 decision record set it at the minimum nearest neighbour spacing of the standardized
+    design, so a length scale sitting on it describes correlation at a scale finer than the
+    design can observe in that direction, whatever the other two do.
+    """
+    lower = float(gp.settings.lengthscale_bounds[0])
+    return bool(np.any(gp.lengthscales() <= lower * PINNED_LENGTHSCALE_MARGIN))
+
+
 def design_roughness(
     standardized_design: np.ndarray, values: np.ndarray, closest_fraction: float = 0.10
 ) -> dict[str, float]:
@@ -935,6 +963,52 @@ def functional_decomposition(
     }
 
 
+def functional_physics_check(
+    decomposition: dict[str, Any], abscissa: np.ndarray
+) -> dict[str, Any]:
+    """The five quantities the P6 prediction of ``docs/ABLATIONS.md`` is decided against.
+
+    Build spec 12.3 states an expected physics, covers leading the service range and the
+    strength taking over near the peak, and ground rule 12 required that sentence to be turned
+    into falsifiable predictions and committed before any index existed. This function measures
+    exactly what those predictions named, so the verdict reaches the report through the artifact
+    rather than through somebody reading a figure.
+
+    The crossover count is the number of times the leading and second ranked inputs swap along
+    the usable domain. Zero means one input leads everywhere, which is a result, and the minimum
+    margin says how close the other came.
+    """
+    usable = np.asarray(decomposition["usable"], dtype=bool)
+    stations = np.asarray(abscissa, dtype=float)[usable]
+    first = np.asarray(decomposition["first_order"], dtype=float)[:, usable]
+    total = np.asarray(decomposition["total_order"], dtype=float)[:, usable]
+    if stations.size < 2:
+        raise ValueError(
+            "the physics check needs at least two usable stations; this block has "
+            f"{stations.size}."
+        )
+    order = np.argsort(-first.mean(axis=1))
+    leader, runner_up = int(order[0]), int(order[1])
+    margin = first[leader] - first[runner_up]
+    crossings = int(np.sum(np.sign(margin[:-1]) * np.sign(margin[1:]) < 0.0))
+    worst = int(np.argmin(margin))
+    interaction = 1.0 - first.sum(axis=0)
+    return {
+        "leader": FEATURE_ORDER[leader],
+        "runner_up": FEATURE_ORDER[runner_up],
+        "n_crossings": crossings,
+        "min_margin": float(margin[worst]),
+        "min_margin_u_mm": float(stations[worst]),
+        "leader_share_at_first_station": float(first[leader, 0]),
+        "first_station_u_mm": float(stations[0]),
+        "max_total_by_input": {
+            FEATURE_ORDER[index]: float(total[index].max())
+            for index in range(len(FEATURE_ORDER))
+        },
+        "max_interaction_share": float(interaction.max()),
+    }
+
+
 def aggregated_indices(fits: list[PceFit], eigenvalues: np.ndarray) -> dict[str, Any]:
     """Generalized sensitivity indices over a block, weighted two ways.
 
@@ -1020,6 +1094,87 @@ def agreement_rows(
                 }
             )
     return rows
+
+
+#: Tolerances the agreement ladder is reported on. Containment in the posterior interval is
+#: the criterion build spec 12.2 states, and it is what the verdict is decided on; this ladder
+#: is what turns a bare count into something a reader can diagnose, because a row missing an
+#: interval by 0.001 and a row missing it by 0.3 are not the same disagreement.
+AGREEMENT_TOLERANCES: tuple[float, ...] = (0.01, 0.02, 0.05, 0.10)
+
+
+def agreement_diagnosis(
+    rows: list[dict[str, Any]], records: dict[str, Any], targets: list[str]
+) -> dict[str, Any]:
+    """Why the two constructions land where they do, as numbers rather than as a paragraph.
+
+    Build spec 12.2 requires a disagreement to be investigated in writing rather than averaged
+    away. Three measurements make that investigation possible without anybody re running the
+    stage by hand:
+
+    - **The gap ladder.** How many rows would agree if the criterion allowed a tolerance. A
+      third of the misses here are the bottom cover, where the sparse expansion says exactly
+      zero because least angle regression dropped the term and the posterior interval starts
+      just above zero. That is a boundary technicality and not a disagreement about physics.
+    - **The additivity gap.** How many input slots have a total index exactly equal to their
+      first order index. A sparse expansion that selected no interaction term reports exactly
+      zero interaction; a Gaussian process realization is a generic function whose interaction
+      is never exactly zero. This is a structural difference between the two model families
+      and it is why the total order indices agree far less often than the first order ones.
+    - **The interaction shares.** The same thing as one number per construction.
+    """
+    frame = pd.DataFrame(rows)
+    ladder = {
+        f"{tolerance:g}": int(
+            (frame["agrees"] | (frame["gap"] < float(tolerance))).sum()
+        )
+        for tolerance in AGREEMENT_TOLERANCES
+    }
+    additive = 0
+    posterior_additive = 0
+    for name in targets:
+        chaos = records[name]["pce"]
+        posterior = records[name]["gp"]
+        first = np.asarray(chaos["first_order"], dtype=float)
+        total = np.asarray(chaos["total_order"], dtype=float)
+        additive += int(np.sum(np.abs(total - first) < 1.0e-12))
+        gp_first = np.asarray(posterior["first_order"]["median"], dtype=float)
+        gp_total = np.asarray(posterior["total_order"]["median"], dtype=float)
+        posterior_additive += int(np.sum(np.abs(gp_total - gp_first) < 1.0e-12))
+    return {
+        "by_kind": {
+            str(kind): {
+                "n_agree": int(group["agrees"].sum()),
+                "n_rows": int(len(group)),
+            }
+            for kind, group in frame.groupby("kind")
+        },
+        "within_tolerance": ladder,
+        "tolerances": list(AGREEMENT_TOLERANCES),
+        "median_gap_when_disagreeing": (
+            float(frame.loc[~frame["agrees"], "gap"].median())
+            if (~frame["agrees"]).any()
+            else 0.0
+        ),
+        "median_posterior_width": float((frame["gp_high"] - frame["gp_low"]).median()),
+        "n_input_slots": int(len(targets) * len(FEATURE_ORDER)),
+        "n_chaos_additive_slots": additive,
+        "n_posterior_additive_slots": posterior_additive,
+        "n_chaos_without_interaction_terms": int(
+            sum(1 for name in targets if not records[name]["pce"]["interactions"])
+        ),
+        "chaos_interaction_share_median": float(
+            np.median([records[name]["pce"]["interaction_share"] for name in targets])
+        ),
+        "posterior_interaction_share_median": float(
+            np.median(
+                [
+                    1.0 - float(np.sum(records[name]["gp"]["first_order"]["median"]))
+                    for name in targets
+                ]
+            )
+        ),
+    }
 
 
 def ranking(values: np.ndarray) -> list[str]:
@@ -1113,12 +1268,12 @@ def build_aggregated_table(payload: dict[str, Any]) -> str:
     """
     lines = [
         "% Generated by the sensitivity stage (ufem.sensitivity). Do not edit.",
-        r"\begin{tabular}{llrrrrrrl}",
+        r"\begin{tabular}{llrrrrrrrl}",
         r"\toprule",
-        r"Block & Weighting & \multicolumn{3}{c}{First order $S_i$} & "
+        r"Block & Weighting & $Q^2$ & \multicolumn{3}{c}{First order $S_i$} & "
         r"\multicolumn{3}{c}{Total $T_i$} & Publish \\",
-        r"\cmidrule(lr){3-5}\cmidrule(lr){6-8}",
-        r" & & $f_{cm}$ & $c_{\mathrm{bot}}$ & $c_{\mathrm{top}}$ & "
+        r"\cmidrule(lr){4-6}\cmidrule(lr){7-9}",
+        r" & & & $f_{cm}$ & $c_{\mathrm{bot}}$ & $c_{\mathrm{top}}$ & "
         r"$f_{cm}$ & $c_{\mathrm{bot}}$ & $c_{\mathrm{top}}$ & \\",
         r"\midrule",
     ]
@@ -1126,6 +1281,7 @@ def build_aggregated_table(payload: dict[str, Any]) -> str:
         block_record = payload["functional"][block]
         level = block_record["publication_level"]
         record = block_record["aggregated"]
+        span = [float(item["q2_corrected"]) for item in block_record["components"]]
         for position, weighting in enumerate(("chaos", "eigenvalue")):
             name = block.capitalize() if position == 0 else ""
             cells = _index_cells(
@@ -1133,7 +1289,8 @@ def build_aggregated_table(payload: dict[str, Any]) -> str:
                 level,
             )
             publish = PUBLICATION_TEX[level] if position == 0 else ""
-            lines.append(f"{name} & {weighting} & {cells} & {publish} \\\\")
+            q2 = f"{_fmt(min(span), 2)} to {_fmt(max(span), 2)}" if position == 0 else ""
+            lines.append(f"{name} & {weighting} & {q2} & {cells} & {publish} \\\\")
         lines.append(r"\addlinespace")
     lines = lines[:-1]
     lines.append(r"\midrule")
@@ -1144,7 +1301,8 @@ def build_aggregated_table(payload: dict[str, Any]) -> str:
                 component["publication_level"],
             )
             lines.append(
-                f"{target_label(component['name'])} & component & {cells} & "
+                f"{target_label(component['name'])} & component & "
+                f"{_fmt(component['q2_corrected'])} & {cells} & "
                 f"{PUBLICATION_TEX[component['publication_level']]} \\\\"
             )
     lines += [r"\bottomrule", r"\end{tabular}"]
@@ -1168,10 +1326,17 @@ def build_gate_table(records: dict[str, Any], targets: list[str]) -> str:
     ]
     for target in targets:
         record = records[target]["pce"]
+        # A ceiling read off a process that pinned every lengthscale at its lower bound is the
+        # interpolate the scatter corner of build spec 5.2 reporting a near zero nugget, which
+        # is the opposite of what it means. Those rows carry a dagger rather than a number.
+        ceiling = (
+            _fmt(record["explainable_variance_ceiling"])
+            if record["ceiling_readable"]
+            else WITHHELD_CELL
+        )
         lines.append(
             f"{target_label(target)} & {record['n_terms']} & "
-            f"{_fmt(record['q2_corrected'])} & "
-            f"{_fmt(record['explainable_variance_ceiling'])} & "
+            f"{_fmt(record['q2_corrected'])} & {ceiling} & "
             f"{_fmt(record['design_roughness']['roughness_ratio'])} & "
             f"{PUBLICATION_TEX[record['publication_level']]} \\\\"
         )
@@ -1245,9 +1410,36 @@ def build_markdown_summary(payload: dict[str, Any]) -> str:
                 f"{median} | {interval} | {verdict} |"
             )
     add("")
+    diagnosis = payload["agreement"]["diagnosis"]
     add(
         f"Agreement over all assessed rows: {payload['agreement']['n_agree']} of "
         f"{payload['agreement']['n_rows']}."
+    )
+    add("")
+    add("| Diagnostic | Value |")
+    add("|---|---|")
+    for kind, record in diagnosis["by_kind"].items():
+        add(f"| rows agreeing, {kind} | {record['n_agree']} of {record['n_rows']} |")
+    for tolerance, count in diagnosis["within_tolerance"].items():
+        add(
+            f"| rows agreeing within {tolerance} | {count} of "
+            f"{payload['agreement']['n_rows']} |"
+        )
+    add(
+        f"| input slots with T_i exactly equal to S_i, chaos | "
+        f"{diagnosis['n_chaos_additive_slots']} of {diagnosis['n_input_slots']} |"
+    )
+    add(
+        f"| input slots with T_i exactly equal to S_i, posterior | "
+        f"{diagnosis['n_posterior_additive_slots']} of {diagnosis['n_input_slots']} |"
+    )
+    add(
+        f"| median interaction share, chaos | "
+        f"{diagnosis['chaos_interaction_share_median']:.4f} |"
+    )
+    add(
+        f"| median interaction share, posterior | "
+        f"{diagnosis['posterior_interaction_share_median']:.4f} |"
     )
     add("")
     return "\n".join(out) + "\n"
@@ -1388,9 +1580,13 @@ def run(repo_root: Path | str, config: Config, config_sha256: str) -> Path:
 
     gp_started = _time.perf_counter()
     posteriors: dict[str, dict[str, Any]] = {}
-    for name in targets:
+    for position, name in enumerate(targets, start=1):
         posteriors[name] = gp_posterior_sobol(
             surrogate.models[name], design, config, children[name]
+        )
+        print(
+            f"[sensitivity] posterior Sobol {position}/{len(targets)}: {name} "
+            f"({_time.perf_counter() - gp_started:.0f} s elapsed)"
         )
     gp_seconds = _time.perf_counter() - gp_started
 
@@ -1417,6 +1613,7 @@ def run(repo_root: Path | str, config: Config, config_sha256: str) -> Path:
                 ],
             }
         ceiling = explainable_variance_ceiling(surrogate.models[name])
+        pinned = lengthscale_pinned(surrogate.models[name])
         roughness = design_roughness(standardized_design, training[name])
         records[name] = {
             "pce": {
@@ -1426,6 +1623,8 @@ def run(repo_root: Path | str, config: Config, config_sha256: str) -> Path:
                 "n_terms": fit.n_terms,
                 "publication_level": fit.publication,
                 "explainable_variance_ceiling": ceiling,
+                "ceiling_readable": not pinned,
+                "lengthscale_pinned": pinned,
                 "q2_share_of_ceiling": (
                     float(fit.q2_corrected / ceiling) if ceiling > 0.0 else float("nan")
                 ),
@@ -1540,6 +1739,7 @@ def run(repo_root: Path | str, config: Config, config_sha256: str) -> Path:
                 }
                 for name in names
             ],
+            "physics_check": functional_physics_check(decomposition, abscissa),
             "identity_check": float(
                 np.abs(
                     decomposition["partial_first"].sum(axis=1)
@@ -1607,6 +1807,7 @@ def run(repo_root: Path | str, config: Config, config_sha256: str) -> Path:
                 "percent interval; the chaos index carries no interval of its own because it "
                 "is a decomposition rather than an estimate"
             ),
+            "diagnosis": agreement_diagnosis(agreement, records, targets),
             "rows": agreement,
         },
         "publication_counts": {
@@ -1668,6 +1869,7 @@ def run(repo_root: Path | str, config: Config, config_sha256: str) -> Path:
         "agreement": {
             "n_rows": len(agreement),
             "n_agree": n_agree,
+            "diagnosis": payload["agreement"]["diagnosis"],
         },
         "gp_sobol_samples": payload["context"]["gp_sobol_samples"],
         "gp_realizations": payload["context"]["gp_realizations"],

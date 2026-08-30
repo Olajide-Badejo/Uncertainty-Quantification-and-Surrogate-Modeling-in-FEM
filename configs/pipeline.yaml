@@ -163,8 +163,13 @@ sensitivity:
   # index is the distribution over these, never the posterior mean's single number.
   gp_realizations: 200
   # Scrambled Sobol design size per realization, as a power of two. Build spec 12.2 asks for
-  # 2^15; the measured wall time and the decision are in docs/DESIGN_DECISIONS.md.
-  gp_sobol_log2_samples: 15
+  # 2^15. Measured on this machine, 2^15 costs 11.0 minutes over the 24 targets against 2.7
+  # minutes at 2^13, and the two produce index medians and 90 percent intervals that agree to
+  # three decimals, because the Sobol design is shared across realizations so its Monte Carlo
+  # error is common to all of them rather than spread between them. 2^15 would put the whole
+  # pipeline over the 30 minute gate of build spec section 2 to move no reported digit. The
+  # measurement and the decision are in docs/DESIGN_DECISIONS.md.
+  gp_sobol_log2_samples: 13
   # Random Fourier features in the prior path of the pathwise posterior sampler. A joint draw
   # at 163840 design points is not a Cholesky anybody can afford, so the realizations come
   # from the decoupled construction: an approximate prior path plus an exact canonical
