@@ -633,6 +633,75 @@ class TestTheStageProducts:
 
 
 @pytest.mark.fullstack
+class TestTheFailureRegionIsShadedOnTheFailingSide:
+    """Regression test for the defect logged on 2026-08-30.
+
+    The first version of this figure inferred which side of the threshold was the failure
+    region from where the threshold fell relative to the median, which is backwards by
+    construction: a below type limit state puts its threshold in the lower tail, exactly the
+    case the heuristic read as an above type. All three panels shaded the safe side, and
+    nothing but looking at the rendered figure would have caught it, which is why this test
+    reads the shaded polygon rather than the code path.
+
+    Guarded at the point of use rather than at module import: matplotlib is not in the light
+    stack the fast CI jobs install.
+    """
+
+    @staticmethod
+    def _frame():
+        import pandas as pd
+
+        values = np.linspace(0.0, 10.0, 64)
+        return pd.DataFrame(
+            {
+                "target": "P_max_N",
+                "value": values,
+                "aleatory_density": np.exp(-((values - 5.0) ** 2) / 4.0),
+                "predictive_density": np.exp(-((values - 5.0) ** 2) / 9.0),
+            }
+        )
+
+    def _shaded_extent(self, direction: str, threshold: float):
+        pytest.importorskip("matplotlib")
+        from matplotlib import pyplot as plt
+
+        from ufem.plotting.propagation import qoi_densities
+
+        figure = qoi_densities(
+            self._frame(),
+            ["P_max_N"],
+            {"P_max_N": threshold},
+            {"P_max_N": direction},
+            {"P_max_N": "Peak load"},
+            {"P_max_N": 1.0},
+            {"P_max_N": "kN"},
+            0.4,
+        )
+        try:
+            axis = figure.axes[0]
+            # Two filled regions per panel, added in this order: the aleatory density and then
+            # the failure region. The second is the one under test.
+            vertices = np.vstack([path.vertices for path in axis.collections[1].get_paths()])
+            return float(vertices[:, 0].min()), float(vertices[:, 0].max())
+        finally:
+            plt.close(figure)
+
+    def test_a_below_limit_state_shades_only_under_its_threshold(self):
+        low, high = self._shaded_extent("below", 3.0)
+        assert high <= 3.0 + 1.0e-9
+        assert low < 3.0
+
+    def test_an_above_limit_state_shades_only_over_its_threshold(self):
+        low, high = self._shaded_extent("above", 7.0)
+        assert low >= 7.0 - 1.0e-9
+        assert high > 7.0
+
+    def test_an_unknown_direction_raises_rather_than_guessing(self):
+        with pytest.raises(ValueError):
+            self._shaded_extent("sideways", 5.0)
+
+
+@pytest.mark.fullstack
 class TestTheReadmeAgreesWithTheArtifact:
     """Ground rule 10: a README claim that disagrees with the manifest is a CI failure.
 
