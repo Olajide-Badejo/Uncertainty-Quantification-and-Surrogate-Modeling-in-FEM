@@ -797,3 +797,157 @@ def test_the_curve_envelope_orders_its_percentiles_on_a_synthetic_family():
     values = frame[columns].to_numpy(dtype=float)
     assert np.all(np.diff(values, axis=1) >= -1.0e-12)
     assert int(frame["n_curves"].iloc[0]) == 50
+
+
+class TestTheRecomputationOnPersistedRows:
+    """``recompute_limit_state`` on rows built by hand, so the arithmetic is pinned alone.
+
+    The persisted subsample exists for one reason: the reliability panel of build spec 15 has a
+    threshold slider, and binding law 5 forbids a dashboard from computing anything the pipeline
+    has not stated. These tests are about the function the panel calls, not about the panel.
+    """
+
+    @staticmethod
+    def _frame():
+        import pandas as pd
+
+        return pd.DataFrame(
+            {
+                "inside_domain": [True, True, False, False],
+                "P_max_N_mean": [10.0, 20.0, 30.0, 40.0],
+                "P_max_N_lower": [5.0, 15.0, 25.0, 35.0],
+                "P_max_N_upper": [15.0, 25.0, 35.0, 45.0],
+            }
+        )
+
+    def test_the_point_estimate_counts_the_mean_predictions_below_the_threshold(self):
+        from ufem.propagate import recompute_limit_state
+
+        result = recompute_limit_state(self._frame(), "P_max_N", "below", 25.0)
+        assert result["n_failures"] == 2
+        assert result["pf_point"] == 0.5
+        assert result["n_samples"] == 4
+
+    def test_the_conservative_bound_counts_every_band_that_crosses(self):
+        from ufem.propagate import recompute_limit_state
+
+        # At 36 the mean falls below on three rows and the lower end of the band on all four,
+        # so the bound is strictly above the point estimate and the union has done something.
+        result = recompute_limit_state(self._frame(), "P_max_N", "below", 36.0)
+        assert result["pf_point"] == 0.75
+        assert result["pf_conservative"] == 1.0
+        assert result["n_point_outside_band"] == 0
+
+    def test_the_bound_never_falls_below_its_own_point_estimate(self):
+        from ufem.propagate import recompute_limit_state
+
+        for threshold in np.linspace(0.0, 60.0, 61):
+            result = recompute_limit_state(self._frame(), "P_max_N", "below", float(threshold))
+            assert result["pf_conservative"] >= result["pf_point"], threshold
+
+    def test_the_inside_domain_estimate_uses_only_the_inside_rows(self):
+        from ufem.propagate import recompute_limit_state
+
+        result = recompute_limit_state(self._frame(), "P_max_N", "below", 25.0)
+        assert result["pf_inside_domain"] == 1.0
+        assert result["n_inside_domain"] == 2
+        assert result["out_of_domain_fraction"] == 0.5
+
+    def test_an_absent_target_raises_rather_than_returning_a_probability(self):
+        from ufem.propagate import recompute_limit_state
+
+        with pytest.raises(KeyError, match="no column"):
+            recompute_limit_state(self._frame(), "softening_ratio", "below", 0.5)
+
+    def test_the_column_speller_rejects_a_quantity_it_does_not_persist(self):
+        from ufem.propagate import subsample_column
+
+        assert subsample_column("P_max_N", "mean") == "P_max_N_mean"
+        with pytest.raises(ValueError, match="quantities"):
+            subsample_column("P_max_N", "median")
+
+
+@pytest.mark.fullstack
+class TestThePersistedSubsampleArtifact:
+    """The written rows against the numbers the stage recorded from them."""
+
+    @staticmethod
+    def _load(repo_root, config):
+        import json
+
+        import pandas as pd
+
+        from ufem.config import config_hash
+        from ufem.manifest import stage_dir
+        from ufem.propagate import MC_SUBSAMPLE_PARQUET, PROPAGATION_JSON, STAGE_NAME
+
+        directory = stage_dir(
+            repo_root / config.pipeline.paths.artifact_root, STAGE_NAME, config_hash(config)
+        )
+        payload_path = directory / PROPAGATION_JSON
+        frame_path = directory / MC_SUBSAMPLE_PARQUET
+        if not payload_path.is_file() or not frame_path.is_file():
+            pytest.skip("the propagate stage has not run for this config hash")
+        return json.loads(payload_path.read_text(encoding="utf-8")), pd.read_parquet(frame_path)
+
+    def test_the_subsample_carries_at_least_twenty_thousand_rows(self, repo_root, config):
+        payload, frame = self._load(repo_root, config)
+        assert len(frame) == payload["subsample"]["n_rows"]
+        assert len(frame) >= 20000
+        assert len(frame) == config.pipeline.mc.epistemic_subsample
+
+    def test_the_rows_are_a_subset_of_the_aleatory_sample_and_are_sorted(
+        self, repo_root, config
+    ):
+        payload, frame = self._load(repo_root, config)
+        rows = frame["row"].to_numpy()
+        assert np.all(np.diff(rows) > 0)
+        assert rows.min() >= 0
+        assert rows.max() < payload["context"]["n_samples"]
+
+    def test_recomputing_at_the_configured_threshold_reproduces_the_recorded_value(
+        self, repo_root, config
+    ):
+        """The gate that makes the slider honest: the same code, the same number, exactly."""
+        from ufem.propagate import LIMIT_STATES, recompute_limit_state
+
+        payload, frame = self._load(repo_root, config)
+        recorded = payload["subsample"]["limit_states"]
+        for state in LIMIT_STATES:
+            fresh = recompute_limit_state(
+                frame,
+                state.target,
+                state.direction,
+                float(recorded[state.config_field]["threshold"]),
+            )
+            for key, value in recorded[state.config_field].items():
+                if isinstance(value, float) and math.isnan(value):
+                    assert math.isnan(fresh[key]), (state.config_field, key)
+                else:
+                    assert fresh[key] == value, (state.config_field, key)
+
+    def test_the_subsample_probability_sits_within_monte_carlo_error_of_the_headline(
+        self, repo_root, config
+    ):
+        """A subsample is not the full sample, and the difference must be error, not a bug.
+
+        Three binomial standard errors of the subsample estimate, which is the interval a
+        difference of this kind is allowed to live in. A subsample whose probability had
+        drifted outside it would mean the persisted rows are not rows of the sample the
+        headline was counted on.
+        """
+        payload, _frame = self._load(repo_root, config)
+        recorded = payload["subsample"]["limit_states"]
+        for record in payload["limit_states"]:
+            subsample = recorded[record["config_field"]]
+            tolerance = 3.0 * subsample["pf_standard_error"]
+            gap = abs(subsample["pf_point"] - record["pf_point"])
+            assert gap <= tolerance + RESOLVABLE_PF_FLOOR, record["config_field"]
+
+    def test_every_persisted_sigma_is_positive(self, repo_root, config):
+        payload, frame = self._load(repo_root, config)
+        from ufem.propagate import subsample_column
+
+        for name in payload["context"]["targets"]:
+            column = subsample_column(name, "sigma")
+            assert (frame[column].to_numpy(dtype=float) > 0.0).all(), name
