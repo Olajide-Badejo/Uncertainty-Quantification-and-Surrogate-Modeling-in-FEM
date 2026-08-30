@@ -610,12 +610,48 @@ def build_macro_fragment(data: dict[str, Any], config: Config) -> str:
     add("SensWithheld", str(int(counts["not_published"])))
     add("SensAgreeRows", str(int(sensitivity["agreement"]["n_rows"])))
     add("SensAgreeCount", str(int(sensitivity["agreement"]["n_agree"])))
+    diagnosis = sensitivity["agreement"]["diagnosis"]
+    for kind, kind_key in (("first_order", "First"), ("total_order", "Total")):
+        add(f"SensAgree{kind_key}", str(int(diagnosis["by_kind"][kind]["n_agree"])))
+        add(f"SensAgree{kind_key}Rows", str(int(diagnosis["by_kind"][kind]["n_rows"])))
+    for tolerance, tolerance_key in (("0.01", "OnePct"), ("0.05", "FivePct")):
+        add(
+            f"SensAgreeWithin{tolerance_key}",
+            str(int(diagnosis["within_tolerance"][tolerance])),
+        )
+    add("SensInputSlots", str(int(diagnosis["n_input_slots"])))
+    add("SensAdditiveSlots", str(int(diagnosis["n_chaos_additive_slots"])))
+    add("SensPosteriorAdditiveSlots", str(int(diagnosis["n_posterior_additive_slots"])))
+    add(
+        "SensNoInteractionExpansions",
+        str(int(diagnosis["n_chaos_without_interaction_terms"])),
+    )
+    add(
+        "SensChaosInteraction",
+        _fmt(float(diagnosis["chaos_interaction_share_median"]), 3),
+    )
+    add(
+        "SensPosteriorInteraction",
+        _fmt(float(diagnosis["posterior_interaction_share_median"]), 3),
+    )
+    add("SensGapMedian", _fmt(float(diagnosis["median_gap_when_disagreeing"]), 3))
+    add("SensPosteriorWidthMedian", _fmt(float(diagnosis["median_posterior_width"]), 3))
     q2_values = [
         float(sensitivity["targets"][name]["pce"]["q2_corrected"])
         for name in context["targets"]
     ]
     add("SensQTwoMax", _fmt(max(q2_values), 3))
     add("SensQTwoMin", _fmt(min(q2_values), 3))
+    add(
+        "SensPinned",
+        str(
+            sum(
+                1
+                for name in context["targets"]
+                if sensitivity["targets"][name]["pce"]["lengthscale_pinned"]
+            )
+        ),
+    )
     best = context["targets"][int(max(range(len(q2_values)), key=q2_values.__getitem__))]
     add("SensQTwoBestTarget", QOI_LABELS.get(best, best).lower())
     for target, target_key in (
@@ -662,6 +698,31 @@ def build_macro_fragment(data: dict[str, Any], config: Config) -> str:
         add(f"SensFunc{block_key}Stations", str(int(record["n_usable_stations"])))
         add(f"SensFunc{block_key}Components", str(int(record["n_components"])))
         add(f"SensFunc{block_key}Level", record["publication_level"].replace("_", " "))
+        physics = record["physics_check"]
+        add(f"SensFunc{block_key}Crossings", str(int(physics["n_crossings"])))
+        add(f"SensFunc{block_key}Leader", INPUT_MATH[physics["leader"]].split(" [")[0])
+        add(
+            f"SensFunc{block_key}RunnerUp",
+            INPUT_MATH[physics["runner_up"]].split(" [")[0],
+        )
+        add(f"SensFunc{block_key}MinMargin", _fmt(float(physics["min_margin"]), 3))
+        add(f"SensFunc{block_key}MinMarginAt", _fmt(float(physics["min_margin_u_mm"]), 1))
+        add(
+            f"SensFunc{block_key}LeadFirst",
+            _fmt(float(physics["leader_share_at_first_station"]), 3),
+        )
+        add(
+            f"SensFunc{block_key}FirstStation",
+            _fmt(float(physics["first_station_u_mm"]), 2),
+        )
+        add(
+            f"SensFunc{block_key}MaxTotalCBot",
+            _fmt(float(physics["max_total_by_input"]["c_nom_bottom_mm"]), 3),
+        )
+        add(
+            f"SensFunc{block_key}MaxInteraction",
+            _fmt(float(physics["max_interaction_share"]), 3),
+        )
     add(
         "SensKernelDeviationMax",
         _fmt(
