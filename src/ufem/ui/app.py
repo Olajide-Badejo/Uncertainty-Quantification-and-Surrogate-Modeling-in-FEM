@@ -38,7 +38,7 @@ from nicegui import ui
 from ufem import __version__
 from ufem.calibrate import SIGNAL_DAMAGE, SIGNAL_FORCE
 from ufem.config import FEATURE_ORDER, Config
-from ufem.propagate import recompute_limit_state
+from ufem.propagate import recompute_limit_state, subsample_column
 from ufem.sensitivity import PUBLICATION_TEX
 from ufem.ui import figures, layout
 from ufem.ui.predict import Prediction, export_payload, predict
@@ -599,7 +599,12 @@ def build_reliability_panel(store: LabStore) -> None:
     )
 
     def _threshold_bounds(state: dict[str, Any]) -> tuple[float, float]:
-        column = f"{state['target']}_mean"
+        """The sampled range of one limit state's quantity, from the persisted rows.
+
+        The column is named through :func:`ufem.propagate.subsample_column` rather than
+        spelled here, so the writer and the reader cannot drift into two conventions.
+        """
+        column = subsample_column(state["target"], "mean")
         values = store.mc_subsample[column].to_numpy(dtype=float)
         return float(values.min()), float(values.max())
 

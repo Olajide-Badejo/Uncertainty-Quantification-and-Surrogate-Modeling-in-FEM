@@ -263,10 +263,12 @@ class TestTheThresholdSlider:
 
     def test_moving_the_threshold_moves_the_probability_monotonically(self, store):
         """A slider that did not order its answers would be reading the wrong column."""
-        from ufem.propagate import LIMIT_STATES, recompute_limit_state
+        from ufem.propagate import LIMIT_STATES, recompute_limit_state, subsample_column
 
         state = LIMIT_STATES[0]
-        column = store.mc_subsample[f"{state.target}_mean"].to_numpy(dtype=float)
+        column = store.mc_subsample[
+            subsample_column(state.target, "mean")
+        ].to_numpy(dtype=float)
         thresholds = np.linspace(column.min(), column.max(), 25)
         probabilities = [
             recompute_limit_state(
@@ -286,10 +288,12 @@ class TestTheThresholdSlider:
         assert probabilities[-1] == (len(store.mc_subsample) - 1) / len(store.mc_subsample)
 
     def test_the_bound_is_never_below_the_point_estimate_at_any_threshold(self, store):
-        from ufem.propagate import LIMIT_STATES, recompute_limit_state
+        from ufem.propagate import LIMIT_STATES, recompute_limit_state, subsample_column
 
         for state in LIMIT_STATES:
-            column = store.mc_subsample[f"{state.target}_mean"].to_numpy(dtype=float)
+            column = store.mc_subsample[
+                subsample_column(state.target, "mean")
+            ].to_numpy(dtype=float)
             for threshold in np.linspace(column.min(), column.max(), 15):
                 result = recompute_limit_state(
                     store.mc_subsample, state.target, state.direction, float(threshold)
@@ -301,10 +305,12 @@ class TestTheThresholdSlider:
 
     def test_the_out_of_domain_fraction_does_not_depend_on_the_threshold(self, store):
         """It is a property of the sample, not of the limit state, and must read that way."""
-        from ufem.propagate import LIMIT_STATES, recompute_limit_state
+        from ufem.propagate import LIMIT_STATES, recompute_limit_state, subsample_column
 
         state = LIMIT_STATES[0]
-        column = store.mc_subsample[f"{state.target}_mean"].to_numpy(dtype=float)
+        column = store.mc_subsample[
+            subsample_column(state.target, "mean")
+        ].to_numpy(dtype=float)
         shares = {
             recompute_limit_state(
                 store.mc_subsample, state.target, state.direction, float(threshold)
