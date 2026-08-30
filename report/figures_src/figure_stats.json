@@ -43,7 +43,7 @@
     "registered_amplitude": 5,
     "unregistered_curves": 15
   },
-  "config_sha256": "a81c6be1e06a653483aefc5bedee669f4f797cf16b9f520539fbfa342ed19c5f",
+  "config_sha256": "6999093f33faeb16d05d8280f61a4bc8121fcc515e695d1d164c69f16dccfca7",
   "damage_U2_at_half_sat_median_mm": 8.302366311258577,
   "damage_median_at_U2_10mm": 0.9470000267028807,
   "damage_saturation_level": 0.9470000267028807,
@@ -149,6 +149,16 @@
     "Fcm_MPa": 0.7983605856349681,
     "c_nom_bottom_mm": -0.14286534560359654,
     "c_nom_top_mm": 0.23754746695162182
+  },
+  "pmax_validation": {
+    "n_folds": 10,
+    "r2_test": {
+      "climatology": -0.010178051482903738,
+      "gaussian_process": 0.726125393457214,
+      "linear": 0.677438327403647,
+      "nearest_neighbour": 0.6206293627847357,
+      "quadratic_chaos": 0.6660613973167793
+    }
   },
   "registration": {
     "mean_peak_registered_kN": 38.03931142644312,

@@ -248,6 +248,43 @@ class KernelSettings(_Frozen):
         return self
 
 
+class SurrogateSettings(_Frozen):
+    """The Gaussian process surrogate of build spec 10.3 and 10.4.
+
+    ``noise_prior_median_variance`` is the center of a LogNormal hyperprior on the fitted
+    noise variance, in standardized target units. It is a center and not a floor, and the
+    distinction is the whole of ground rule 4: the noise stays a free parameter of the
+    marginal likelihood, so a target whose data argues for a noise an order of magnitude
+    either side of the center gets it. What the prior rules out is the degenerate corner where
+    the noise goes to zero and the kernel interpolates the scatter.
+    """
+
+    phase_variance_target: float = Field(gt=0.0, le=1.0)
+    phase_max_components: int = Field(ge=1)
+    displacement_variance_target: float = Field(gt=0.0, le=1.0)
+    displacement_max_components: int = Field(ge=1)
+    noise_prior_median_variance: PositiveFloat
+    noise_prior_log_scale: PositiveFloat
+    optimizer_max_iterations: int = Field(ge=1)
+
+
+class ValidationSettings(_Frozen):
+    """The one cross validation harness of build spec 16.3."""
+
+    n_folds: int = Field(ge=2)
+    headline_qoi: list[str] = Field(min_length=1)
+    n_neighbors: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def _check_unique(self) -> ValidationSettings:
+        if len(set(self.headline_qoi)) != len(self.headline_qoi):
+            raise ValueError(
+                f"headline_qoi repeats a name: {self.headline_qoi}. The baseline gate is "
+                "decided on this list, so a duplicate would weight one quantity twice."
+            )
+        return self
+
+
 class ConformalSettings(_Frozen):
     alphas: list[float]
     K_posterior_draws: int = Field(ge=1)
@@ -282,6 +319,8 @@ class PipelineConfig(_Frozen):
     normalizers: Normalizers
     pca: PcaSettings
     kernel: KernelSettings
+    surrogate: SurrogateSettings
+    validation: ValidationSettings
     conformal: ConformalSettings
     mc: McSettings
     limit_states: LimitStates

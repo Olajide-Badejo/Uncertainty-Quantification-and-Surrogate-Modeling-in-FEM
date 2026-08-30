@@ -53,6 +53,10 @@ from ufem.reduce import BASIS_JSON, RECONSTRUCTION_JSON
 from ufem.reduce import STAGE_NAME as REDUCE_STAGE
 from ufem.register import LANDMARKS_PARQUET
 from ufem.register import STAGE_NAME as REGISTER_STAGE
+from ufem.surrogate import STAGE_NAME as SURROGATE_STAGE
+from ufem.surrogate import SURROGATE_JSON
+from ufem.validate import BASELINES_JSON, GP_MODEL, build_tex_table
+from ufem.validate import STAGE_NAME as VALIDATE_STAGE
 
 #: The registration ablation is a script rather than a stage, but it writes into the same
 #: artifact store under this name, and the report quotes its three metrics.
@@ -141,10 +145,14 @@ def collect(root: Path, config: Config) -> dict[str, Any]:
             )
     register_dir = stage_dir(artifact_root, REGISTER_STAGE, digest)
     reduce_dir = stage_dir(artifact_root, REDUCE_STAGE, digest)
+    surrogate_dir = stage_dir(artifact_root, SURROGATE_STAGE, digest)
+    validate_dir = stage_dir(artifact_root, VALIDATE_STAGE, digest)
     ablation_dir = stage_dir(artifact_root, ABLATION_1_STAGE, digest)
     for directory, stage, how in (
         (register_dir, REGISTER_STAGE, f"ufem run {REGISTER_STAGE}"),
         (reduce_dir, REDUCE_STAGE, f"ufem run {REDUCE_STAGE}"),
+        (surrogate_dir, SURROGATE_STAGE, f"ufem run {SURROGATE_STAGE}"),
+        (validate_dir, VALIDATE_STAGE, f"ufem run {VALIDATE_STAGE}"),
     ):
         if not (directory / "manifest.json").is_file():
             raise ArtifactMissing(
@@ -173,6 +181,8 @@ def collect(root: Path, config: Config) -> dict[str, Any]:
             reduce_dir / RECONSTRUCTION_JSON, "reconstruction error percentiles"
         ),
         "ablation_1": _read_json(ablation_path, "registration ablation"),
+        "surrogate": _read_json(surrogate_dir / SURROGATE_JSON, "surrogate record"),
+        "baselines": _read_json(validate_dir / BASELINES_JSON, "baselines and validation result"),
         "ingest_manifest": load_manifest(ingest_dir),
         "grid_manifest": load_manifest(grid_dir),
         "audit_manifest": load_manifest(audit_dir),
@@ -430,6 +440,77 @@ def build_macro_fragment(data: dict[str, Any], config: Config) -> str:
     ))
     add("AblationRank", str(int(ablation["rank_for_peak_comparison"])))
 
+    # Phase P4: the Gaussian process surrogate and the fold honest baseline comparison.
+    surrogate = data["surrogate"]
+    baselines = data["baselines"]
+    counts = surrogate["component_counts"]
+    add("NSurrogateTargets", str(len(surrogate["target_order"])))
+    add("NGPRestarts", str(int(surrogate["gp_settings"]["restarts"])))
+    add("SurrogateComponentsAmplitude", str(int(counts["amplitude"])))
+    add("SurrogateComponentsDamage", str(int(counts["damage"])))
+    add("SurrogateComponentsPhase", str(int(counts["phase"])))
+    add("SurrogateComponentsDisplacement", str(int(counts["displacement"])))
+    phase_block = surrogate["phase_block"]
+    add("PhaseComponentsNeeded", str(int(phase_block["n_needed_for_target"])))
+    add(
+        "PhaseVarianceCarried", _fmt(100.0 * float(phase_block["variance_carried_by_fitted"]), 1)
+    )
+    displacement_block = surrogate["displacement_block"]
+    add(
+        "DisplacementComponentsNeeded",
+        str(int(displacement_block["n_needed_for_target"])),
+    )
+    add(
+        "DisplacementVarianceCarried",
+        _fmt(100.0 * float(displacement_block["variance_carried_by_fitted"]), 1),
+    )
+    add(
+        "SurrogateForceReconMedian",
+        _fmt(100.0 * float(surrogate["reconstruction"]["force_relative_l2"]["p50"]), 2),
+    )
+
+    gate = baselines["gate"]
+    add("ValidationFolds", str(int(baselines["context"]["n_folds"])))
+    add("ValidationGatePassed", "passed" if gate["passed"] else "failed")
+    add("ValidationGateFailingCount", str(len(gate["failing_targets"])))
+    scalar_lookup = {
+        (str(row["target"]), str(row["model"])): row
+        for row in baselines["scalar"]
+        if row["harness"] == "leave_one_out"
+    }
+    # LaTeX macro names may not contain digits, so "k0" becomes "KZero" and every R2 macro is
+    # spelled "RSq" rather than "R2" here.
+    for target, key in (
+        ("P_max_N", "PMax"),
+        ("u_peak_mm", "UPeak"),
+        ("k0_N_per_mm", "KZero"),
+        ("E_abs_Nmm", "EAbs"),
+    ):
+        for model, model_key in (
+            (GP_MODEL, "GP"),
+            ("linear", "Linear"),
+            ("quadratic_chaos", "Quad"),
+            ("nearest_neighbour", "NN"),
+        ):
+            add(
+                f"RSq{key}{model_key}",
+                _fmt(float(scalar_lookup[(target, model)]["r2_test"]), 3),
+            )
+    curve_lookup = {
+        str(row["model"]): row for row in baselines["curve"] if row["signal"] == "force"
+    }
+    for model, model_key in (
+        (GP_MODEL, "GP"),
+        ("climatology", "Climatology"),
+        ("linear", "Linear"),
+        ("quadratic_chaos", "Quad"),
+        ("nearest_neighbour", "NN"),
+    ):
+        add(
+            f"CurveLTwo{model_key}",
+            _fmt(100.0 * float(curve_lookup[model]["test"]["p50"]), 2),
+        )
+
     add("ConfigHash", data["config_sha256"][:12])
     add("GridPoints", str(config.pipeline.grid.n_points))
     add("QuantileBins", str(censoring["n_quantile_bins"]))
@@ -543,6 +624,20 @@ def build_reduction_table(data: dict[str, Any]) -> str:
         )
     lines += [r"\bottomrule", r"\end{tabular}"]
     return "\n".join(lines) + "\n"
+
+
+def build_baselines_table(data: dict[str, Any], config: Config) -> str:
+    """The build spec 10.5 gate table: out of sample R2 per model on the headline QoIs.
+
+    Rebuilt from ``ufem.validate``'s own table function on the validate stage's recorded rows
+    rather than copied as bytes, so a formatting change in the stage's own function cannot
+    drift silently from what the report shows: the same code produces both.
+    """
+    return build_tex_table(
+        data["baselines"]["scalar"],
+        data["baselines"]["curve"],
+        list(config.pipeline.validation.headline_qoi),
+    )
 
 
 def build_design_table(data: dict[str, Any], config: Config) -> str:
@@ -947,6 +1042,7 @@ def generate(root: Path) -> dict[str, str]:
         f"{TABLES_DIR}/calibration.tex": build_calibration_table(data),
         f"{TABLES_DIR}/importance_weighting.tex": build_weighting_table(data),
         f"{TABLES_DIR}/reduction_summary.tex": build_reduction_table(data),
+        f"{TABLES_DIR}/baselines_table.tex": build_baselines_table(data, config),
     }
 
 

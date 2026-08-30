@@ -411,13 +411,28 @@ def warp_tangent_vectors(gamma: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     the Karcher mean psi, the mean warp, the psi family, and the shooting vectors, which is
     precisely the log map image this stage needs. Build spec 10.1 says to use the library
     where the library has it, and it has it.
+
+    Called with ``smooth=False``, against the library's own default of ``smooth=True``. That
+    default fits a ``UnivariateSpline(..., s=1e-4)`` to each warp before differentiating it and
+    clips the result at zero, which is a denoising step aimed at warps estimated from noisy
+    data. Measured against this project's own exact inverse (:func:`ufem.surrogate.srsf_curve`,
+    the log map followed by exact quadrature, which applies no smoothing), the smoothed forward
+    map is not a matched pair: round tripping 14 seeded synthetic monotone families through
+    ``smooth=True`` gave a reconstruction error of 1 to 5 percent, ten to a hundred times this
+    representation's measured discretization floor, and 6 of those 14 families never converged
+    at all, hitting the library's fixed 500 iteration cap on its Karcher mean gradient descent
+    (a real bug there: the iteration counter then indexes one past the end of its own log
+    array). The same 14 families under ``smooth=False`` converged every time, with errors of
+    1.5 to 4.7e-3, consistent across seeds. The full measurement is in
+    ``docs/DESIGN_DECISIONS.md``. This is a defect in how this project was calling the library,
+    not a tolerance to widen around it.
     """
     from fdasrsf.utility_functions import SqrtMean
 
     gam = np.asarray(gamma, dtype=float)
     if gam.ndim != 2:
         raise ValueError(f"warp_tangent_vectors needs a 2D family, got shape {gam.shape}.")
-    mu, _gam_mu, _psi, vec = SqrtMean(gam.T)
+    mu, _gam_mu, _psi, vec = SqrtMean(gam.T, smooth=False)
     return np.ascontiguousarray(np.asarray(vec, dtype=float).T), np.asarray(mu, dtype=float)
 
 

@@ -406,3 +406,75 @@ refit rather than reuse it, and a registration stage fast and deterministic enou
 inside a cross validation loop if the fold honest requirement of binding law 3 demands it.
 The phase block's dimension is the thing to look at first: 63 scores over 198 samples is not
 a comfortable ratio, and it may argue for reducing the phase block harder than 99 percent.
+
+## 2026-08-30, Phase P4: Gaussian process surrogate, baselines, fold honest validation
+
+**One test failure led back into P3.** The inherited surrogate code failed one property test,
+`TestSquareRootSlopeRepresentation::test_the_round_trip_recovers_the_family_it_came_from`, with
+an `IndexError` inside `fdasrsf`'s own Karcher mean iteration rather than a tolerance miss.
+Fourteen seeded synthetic families, round tripped through `warp_tangent_vectors`, showed the
+library's default `smooth=True` failing to converge on 6 of them and losing 1 to 5 percent of
+round trip accuracy on the rest, ten to a hundred times the representation's discretization
+floor; `smooth=False` converged on all 14 at 1.5 to 4.7e-3. The fix is one keyword in
+`ufem.register.warp_tangent_vectors`, and it touches the phase block computed at P3: refitting
+register and reduce under the fix leaves the amplitude block and the registration ablation's
+three metrics exactly where P3 measured them, and moves the phase block's own reconstruction
+error from a median of 9.22 percent to 9.98 percent, a worse number that ships because the
+alternative crashes. Recorded in `docs/DEFECT_LOG.md` and `docs/DESIGN_DECISIONS.md`.
+
+**The Gaussian process fit meets its budget with room, and reproduces bitwise.** Forty five
+targets (5 amplitude, 8 of 63 possible phase, 11 damage, 10 of 18 possible displacement scores,
+plus 8 scalar quantities of interest and 3 landmarks), 8 restarts each, 360 individual GP fits,
+54.99 seconds of fitting against the 60 second single threaded budget of build spec 10.3; the
+representation refit (its own SRVF registration and three principal component bases) costs
+12.57 seconds more, for 69.45 seconds of total stage wall time. Restart dispersion in marginal
+log likelihood: median 0.0165 nats per point across the 45 targets, worst case 0.462, zero
+failed restarts, so the multi start policy is doing real work rather than standing on a flat
+surface. A forced rerun (`tests/test_p4_determinism.py`, newly written; the previous agent's
+own docstring promised this file and it did not exist) reproduces every one of the nine output
+artifacts byte for byte, `gp_state.npy` included, which is the build spec 17.2 gate.
+
+**The baseline gate passes on the four headline scalars and does not on the whole curve, and
+both numbers are in the table.** Leave one out out of sample R2: peak load 0.726 against the
+best baseline's 0.677 (linear); displacement at peak 0.281 against 0.182; initial stiffness
+0.297 against 0.234; absorbed energy 0.445 against 0.428. The surrogate beats all four
+baselines (climatology, linear, quadratic chaos, 3 nearest neighbour) on all four headline
+quantities build spec 10.5 decides the gate on. At curve level, over 10 grouped folds, it does
+not: median relative L2 of 23.09 percent against 22.98 (linear), 22.53 (quadratic chaos) and
+22.47 percent (nearest neighbour), all three beating the surrogate, though all four comfortably
+beat the training mean's 25.76 percent. The reduced representation asks the process to predict
+phase and displacement scores no scalar quantity of interest needs, and those errors compound
+through the reconstruction in a way a direct curve average does not pay for. Reported as
+measured in `report/tables/baselines_table.tex`, not tuned away and not omitted from the
+README status line.
+
+**The fold harness costs about ten minutes, mostly in a library override nobody asked for.**
+Total wall time 597 seconds: 0.5 seconds for the closed form scalar leave one out (no refit
+needed) and 595 for the 10 grouped folds, each of which refits the registration, all three
+principal component bases and the full 45 target Gaussian process ensemble. Measured during
+this run: `fdasrsf.fdawarp.srsf_align`, called with `parallel=False` for the determinism reason
+its own docstring gives, silently switches to `parallel=True` whenever a family exceeds 100
+curves, which every non trivial fold does; a Windows `loky` worker pool spawns and re-imports
+the scientific stack per registration. Determinism was not compromised (joblib preserves
+submission order in its results regardless of completion order, and the forced surrogate rerun
+above proves it byte for byte), but the wall clock and the memory footprint are real. Recorded
+in `docs/DESIGN_DECISIONS.md`, not treated as a stop condition, because nothing about correctness
+argues for one.
+
+**The manufactured solution converges at the expected rate and would have been vacuous
+otherwise.** The cut off agent's note said the family was too easy and hit the representation
+floor at n = 64, which would have made the "error decreases with n" assertion pass on any
+implementation, broken or not; the committed test already carries the fix (a rising branch
+times an exponential tail whose peak, location, rise and width are each a genuinely wiggly
+function of the three standardized inputs, not a linear one). Measured: median relative L2 of
+0.0234 at n = 64, 0.0166 at n = 128, 0.0151 at n = 198, monotone and a 35 percent reduction
+from smallest to largest sample against the 20 percent the test requires, comfortably inside
+the 10 percent threshold and the 300 second wall clock budget (152.6 seconds measured).
+
+**Gates.** 315 tests, up from 243 at P3, all passing including the slow markers (the pytest
+configuration here does not exclude them by default, so one `pytest tests -q` run is the full
+gate). `ruff`, `dash_lint.py` and `check_file_sizes.py` clean. `latexmk` builds `main.pdf` at
+16 pages, zero overfull boxes in the new material (one pre-existing underfull box in the P2
+importance weighting table, unrelated to this phase). The baselines table and the peak load
+predicted against actual figure are both generated from the validate stage's own artifacts,
+never a second computation for the report to show.

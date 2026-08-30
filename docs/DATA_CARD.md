@@ -7,7 +7,7 @@ ufem run all
 python scripts/make_data_card.py
 ```
 
-Config SHA-256: `a81c6be1e06a653483aefc5bedee669f4f797cf16b9f520539fbfa342ed19c5f`.
+Config SHA-256: `6999093f33faeb16d05d8280f61a4bc8121fcc515e695d1d164c69f16dccfca7`.
 
 ## 1. The campaign
 
