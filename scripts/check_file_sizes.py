@@ -7,10 +7,14 @@ manifest hash at a pinned location instead of copied in.
 
 ``docs/media/ufem_lab.gif`` was expected to need an exemption here, because build spec 15.1
 requires it to be committed at 12 fps and 960 px and a recording of a live dashboard is not
-obviously a small file. It did not: the measured capture is 0.90 MB, well inside the rule, so
-no exemption was added. That measurement is in docs/ENGINEERING_LOG.md and the decision not to
-weaken the gate pre emptively is in docs/DESIGN_DECISIONS.md. If a future capture crosses
-5 MB, that is a decision to make then, in a commit that says so.
+obviously a small file. It did not, twice: the first capture measured 0.90 MB and the longer
+P10 recapture, at a taller frame so no panel is clipped, measures 1.49 MB. Both are well
+inside the rule, so no exemption was added. Those measurements are in
+docs/ENGINEERING_LOG.md and the decision not to weaken the gate pre emptively is in
+docs/DESIGN_DECISIONS.md. If a future capture crosses 5 MB, that is a decision to make then,
+in a commit that says so; ``scripts/capture_ui_gif.py`` now checks against this limit rather
+than against the looser one in build spec 15.1, so it fails at capture time instead of one
+commit later.
 
 Exit 0 is clean, exit 1 lists every offender with its size.
 """
