@@ -66,14 +66,16 @@ digest. A file edited or truncated behind the pipeline's back is a miss, not a h
 
 ## Readers, and why they are not stages
 
-Three things read the artifact store without writing into it: `scripts/make_data_card.py`,
-`scripts/make_model_card.py`, and UFEM Lab (`ufem lab`, `src/ufem/ui/`). None of them is a
-stage, because none of them produces an artifact another stage consumes, and giving them cache
-keys would have meant a document could be served stale on a hit.
+Five things read the artifact store without writing into it: `scripts/make_data_card.py`,
+`scripts/make_model_card.py`, `scripts/readme_inject.py`, `report/figures_src/make_figures.py`
+(and `scripts/make_readme_media.py`, which is that script with its raster hook enabled), and
+UFEM Lab (`ufem lab`, `src/ufem/ui/`). None of them is a stage, because none of them produces
+an artifact another stage consumes, and giving them cache keys would have meant a document
+could be served stale on a hit.
 
-They are held honest a different way. The two card generators write documents that a staleness
-test regenerates and compares byte for byte, so a card that has drifted from the pipeline is a
-failing test. The dashboard writes nothing, so it is held to binding law 5 directly:
+They are held honest a different way. The three document generators write files that a
+staleness test regenerates and compares byte for byte, so a document that has drifted from the
+pipeline is a failing test. The dashboard writes nothing, so it is held to binding law 5 directly:
 `dash_lint.check_ui_constants` parses every module under `src/ufem/ui/` and rejects any numeric
 literal that is neither structurally trivial nor a presentation constant declared in
 `ui/layout.py`. Anything else a panel displays has to have been read from an artifact.
