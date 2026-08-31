@@ -727,14 +727,20 @@ class TestTheFailureRegionIsShadedOnTheFailingSide:
 class TestTheReadmeAgreesWithTheArtifact:
     """Ground rule 10: a README claim that disagrees with the manifest is a CI failure.
 
-    The same gate the P5 row carries, applied to the P7 row. The status table is the one place
-    in the README that quotes a number before the P10 injection, and a reliability number is
-    exactly the kind that ages badly: the point estimate, its standard error, its bound and the
-    out of domain mass all move together when the pipeline changes, and a row quoting three of
-    the four correctly would be worse than one quoting none.
+    The same gate the calibration numbers carry, applied to the reliability sentence. A
+    reliability number is exactly the kind that ages badly: the point estimate, its standard
+    error, its bound and the out of domain mass all move together when the pipeline changes, and
+    a page quoting three of the four correctly would be worse than one quoting none.
+
+    Until P10 this read the README's phase status table. P10 removed that table and injected the
+    sentence into a named marker pair; what is asserted is unchanged, and it is asserted against
+    the propagate manifest rather than against `scripts/readme_inject.py`, so a generator reading
+    the wrong key fails here even though it would pass its own byte comparison.
     """
 
-    def test_the_status_row_quotes_the_measured_reliability_numbers(self, repo_root, config):
+    def test_the_readme_quotes_the_measured_reliability_numbers(self, repo_root, config):
+        import re
+
         from ufem.config import config_hash
         from ufem.manifest import load_manifest, stage_dir
         from ufem.propagate import STAGE_NAME
@@ -747,13 +753,11 @@ class TestTheReadmeAgreesWithTheArtifact:
         extra = load_manifest(directory)["extra"]
         peak = extra["limit_states"]["peak_load_below_N"]
 
-        rows = [
-            line
-            for line in (repo_root / "README.md").read_text(encoding="utf-8").splitlines()
-            if line.startswith("| P7 |")
-        ]
-        assert len(rows) == 1, "the README status table must carry exactly one P7 row."
-        row = rows[0]
+        # Whitespace collapsed: the injector wraps its prose blocks, and the wrapping is
+        # presentation of the source rather than content.
+        readme = re.sub(
+            r"\s+", " ", (repo_root / "README.md").read_text(encoding="utf-8")
+        )
         for value in (
             str(int(extra["n_samples"])),
             f"{peak['pf_point']:.4f}",
@@ -762,10 +766,10 @@ class TestTheReadmeAgreesWithTheArtifact:
             f"{100.0 * extra['out_of_domain_fraction']:.1f} percent",
             f"{extra['characteristic_value']['configured_N'] / 1000.0:.1f} kN",
         ):
-            assert value in row, (
-                f"the README P7 status row does not quote {value!r}, which is what the "
-                f"propagate manifest at {directory} records. Ground rule 10: fix the README, "
-                "not this test."
+            assert value in readme, (
+                f"the README does not quote {value!r}, which is what the propagate manifest at "
+                f"{directory} records. Ground rule 10: rerun scripts/readme_inject.py, do not "
+                "edit this test."
             )
 
 

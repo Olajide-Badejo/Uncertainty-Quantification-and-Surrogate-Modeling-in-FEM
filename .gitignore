@@ -35,6 +35,8 @@ v1_legacy/augmentation_physics_fixed/crack_evolution_full_aug.csv
 # LaTeX build products and latexmk intermediates
 report/main.pdf
 report/Report.pdf
+# The renamed copy scripts/make_release.py stages for the release upload.
+report/ufem-2.0-report-v*.pdf
 report/*.pptx
 report/test_sample_0212.png
 report/*.aux

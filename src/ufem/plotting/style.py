@@ -126,7 +126,15 @@ def annotation_style() -> dict[str, Any]:
     }
 
 
-def save_figure(fig: Any, path: Path | str, png_dir: str | None = None) -> Path:
+#: Raster preview resolution when one is requested. Overridable through ``UFEM_FIG_PNG_DPI``,
+#: which is how ``scripts/make_readme_media.py`` gets the README images out of exactly the same
+#: figure functions the report compiles instead of drawing a second, divergent set.
+PNG_DPI = 200
+
+
+def save_figure(
+    fig: Any, path: Path | str, png_dir: str | None = None, png_dpi: int | None = None
+) -> Path:
     """Write one vector PDF, optionally a raster preview, and close the figure.
 
     Closing matters in a script that draws a dozen figures: matplotlib holds every open
@@ -140,6 +148,8 @@ def save_figure(fig: Any, path: Path | str, png_dir: str | None = None) -> Path:
     if directory:
         preview = Path(directory)
         preview.mkdir(parents=True, exist_ok=True)
-        fig.savefig(preview / (target.stem + ".png"), dpi=200)
+        if png_dpi is None:
+            png_dpi = int(os.environ.get("UFEM_FIG_PNG_DPI", PNG_DPI))
+        fig.savefig(preview / (target.stem + ".png"), dpi=png_dpi)
     plt.close(fig)
     return target

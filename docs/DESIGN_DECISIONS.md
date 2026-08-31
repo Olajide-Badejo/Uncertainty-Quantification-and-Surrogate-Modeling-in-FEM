@@ -1212,6 +1212,195 @@ ablations reproduced their fold by fold numbers exactly across two separate runs
 downgrade is not claimed and the ablations keep the bitwise claim the rest of the pipeline makes.
 The wall times are CPU wall times and are in `docs/ENGINEERING_LOG.md`.
 
+## 2026-08-31, Phase P10: final QA, the README, the release
+
+### Deviation: the release is tagged `v1.1.0`, not the `v2.0.0` the specification names
+
+Build spec section 22 ends the roadmap with "P10 final QA, README injection, v2.0.0" and section
+23 opens with "`v2.0.0` is taggable when every statement below is true". Every one of those twelve
+statements was swept at P10 and the sweep is in `docs/RELEASE_CHECKLIST.md`. The tag is
+nevertheless `v1.1.0`, by the repository owner's decision, and this entry is here so the next
+reader can tell that from a mistake.
+
+The reason is what a major version communicates. The predecessor is `v1.0.0` and is preserved
+frozen in `v1_legacy/`; this work is the same project's second published state, not a second
+project, and it exposes no interface that anybody depends on and that changed. A major bump would
+assert a break that did not happen. The specification's "2.0" is the name of the rebuild, which is
+why the repository directory and the report title still carry it, and the version string is a
+separate thing from the name.
+
+Nothing in the definition of done depends on the number. The version is declared once, in
+`pyproject.toml`, and reaches the badge, the README's versioning block, `ufem doctor` and every
+manifest from there. `scripts/make_release.py` refuses to release while that string still carries
+its `.dev` suffix, which is the only place the choice is enforced mechanically.
+
+### The README's numbers are injected into named marker pairs, not one block
+
+P0 left a single `BEGIN INJECTED RESULTS` pair in the README as a placeholder. P10 replaced it
+with twelve named pairs (`badges`, `scope`, `schematic`, `results`, `coverage`, `reliability`,
+`evidence`, `caveats`, `laws`, `quickstart`, `versioning`, `gates`), each owned by one builder
+function in `scripts/readme_inject.py`. One block would have forced every number into a
+single slab at the top, which is the shape of a generated page rather than of a page somebody
+reads: a reader wants the reliability sentence under the reliability heading. Named pairs also
+make the failure mode legible, because a stale block is now a stale block with a name.
+
+The mermaid schematic is inside a marker pair for the same reason as the tables. Its node labels
+carry counts, and a diagram is exactly the place where a number goes stale unnoticed, because
+nobody diffs a picture.
+
+### The README's wall time claim is bucketed to five minutes, on purpose
+
+`docs/DEFECT_LOG.md` records the same lesson twice: a byte gated document must not carry a
+quantity that moves without a measurement moving. It cost the model card a stale wall time and
+then a stale git commit. The README is now byte gated by `tests/test_readme_consistency.py`, and
+the regeneration wall time it quotes is the sum of ten stage manifests' `wall_time_s`, every one
+of which is rewritten whenever its stage is rerun while reproducing its outputs bitwise. The
+determinism tests rerun five of those stages on every full suite run.
+
+Rounding to the nearest minute would not have been enough: the measured total sits at about 17.4
+minutes, six seconds under the boundary that would flip it to 18. So the README states the total
+rounded up to the enclosing five minutes, against the budget it is quoted next to, which is read
+out of build spec section 23 rather than typed. That number moves only when the cost of the
+pipeline genuinely moves. The exact per stage wall times stay in `docs/ENGINEERING_LOG.md`, which
+is hand written and gated by nothing, and the checklist points there.
+
+This is a deviation from the P10 brief, which asked for the seventeen minute figure in the README.
+The claim is the same claim; the precision is the part that was traded away, and it was traded for
+a gate that keeps working.
+
+### The prose outside the markers is checked for numbers, because the byte gate cannot see it
+
+A staleness gate proves that the injected blocks are current. It proves nothing at all about the
+sentence above them, and a reader cannot tell the two apart: both are text on a page. So
+`tests/test_readme_consistency.py` strips the marker pairs and the fenced code blocks and then
+refuses any digit carrying a unit, and any decimal with two or more places, in what remains. The
+allowlist is four version strings and nothing else, and widening it is the wrong way to make the
+test pass; moving the number into the block that owns it is the right way.
+
+Three consequences shaped the README. The repository layout tree lost its line counts. The phase
+history lost its table. And the five binding laws are quoted by reading their titles out of build
+spec section 0.2, rather than retyped, so a law reworded in the specification and not in the
+README is a failing test.
+
+### The README status table was removed rather than updated
+
+The README carried a phase table with a state column since P0. It is development scaffolding: it
+tells a reader what order the work happened in, which is the one thing a reader arriving at a
+release does not need, and it ages the moment the project ships. The phase history is in
+`docs/ENGINEERING_LOG.md`, which is where it belongs, and the README's document table points
+there in one line. `tests/test_readme_consistency.py::test_the_readme_has_no_phase_status_table`
+keeps it from coming back.
+
+### The README images are exports of the report's figures, not a second set
+
+The temptation at this point in a project is to draw prettier figures for the front page, and the
+result is a README that disagrees with the document it advertises.
+`scripts/make_readme_media.py` instead runs `report/figures_src/make_figures.py` unchanged with
+the raster preview hook of `ufem.plotting.style.save_figure` pointed at a scratch directory, then
+copies six selected PNGs into `docs/media/`. One change was needed in `style.py` for it: the
+preview resolution is now read from `UFEM_FIG_PNG_DPI`, defaulting to the 200 it always used, so
+the README images come out at 150 dpi without a second code path. Six images at that resolution
+total about 0.85 MB, an order of magnitude inside the file size gate.
+
+### `scripts/make_release.py` prepares a release and refuses to publish one
+
+The script builds the PDF, verifies the branch is `main`, verifies the tree is clean, verifies
+that the README, the data card and the model card all equal what regenerating them produces, runs
+both lints, and then prints the `gh release create` command. It does not run `gh`. Tagging and
+publishing are the only step in this project that rerunning a stage cannot undo, so they stay
+with a human, and there is deliberately no `--force` and no `--yes`: a check that failed is a
+release that is not ready.
+
+### The GIF is framed by measured scroll offsets, not by a taller window
+
+The first capture clipped its panels because it used one viewport and one scroll position for a
+page whose panels are 1607 and 2433 px tall. The obvious fix, a viewport tall enough to hold the
+tallest panel, was rejected: it would have produced a GIF around 960 by 1600, which no reader
+sees whole either, and it would have shrunk every glyph in the downscale. What the recapture does
+instead is name an absolute scroll offset per beat, each measured against the rendered layout, so
+that every beat's subject is wholly inside a 1280 by 960 window. The frame is the same size all
+the way through, because a GIF cannot change dimensions, and the page moves under it.
+
+The offsets are constants in `scripts/capture_ui_gif.py` with the measurements that justify them
+in the comment above. They will go stale if the panels are reordered, and the answer to that is
+`--frames DIR`, which writes every distinct captured frame out as a PNG: a framing claim can only
+be checked by looking, so the script makes looking cheap rather than asserting something it
+cannot know.
+
+### The capture asserts that its own interactions took effect
+
+A recording that shows a slider moving and nothing happening is worse than no recording, and it
+fails silently: the script exits 0, the GIF is written, and the defect is only visible to someone
+who watches it. So the three beats that depend on an interaction check for its effect. The
+censored corner beat raises if the validity warning did not appear and again if it is still there
+after the recovery sweep; the dataset beat raises if the click did not change the selected run.
+
+The click is the interesting one. The design matrix is a Plotly splom, and a click on a guessed
+pixel inside it can land on a failed run, which pops a notification instead of an overlay. The
+script instead reads the trace's own dimension values and axis mapping out of the figure, picks
+the completed run nearest the centre of the executed design, and converts that to a pixel through
+`l2p`. It lands on a completed point by construction, and it says which one on the way past.
+
+### The GIF's size gate is the tracked file limit, not the one build spec 15.1 names
+
+Build spec 15.1 allows 15 MB. Build spec 3.3 allows no tracked file over 5 MB and grants this
+file no exemption, and `scripts/check_file_sizes.py` enforces that on every file git tracks. A
+capture between the two would have passed its own script and failed the repository gate one
+commit later, which is a check that exists and does not work. The capture script now takes the
+smaller of the two and imports the number from the gate that owns it. The recapture measures
+1.49 MB, so nothing was actually at risk; the reason to fix it now is that the next capture will
+be somebody else's.
+
+### The release asset filename is defined once, in the release script
+
+`gh release create` names an asset after the file on disk; the `#` suffix sets a display label
+and nothing else. A README linking `releases/download/v1.1.0/main.pdf` while the release attaches
+a file named anything else is a 404 that nobody discovers until a reader clicks it, and the
+README is the one document where a dead link costs the most.
+
+So `scripts/make_release.py` owns `report_asset_name`, stages `report/main.pdf` under that name
+before printing the upload command, and `scripts/readme_inject.py` imports the function to build
+the download URL. `tests/test_readme_consistency.py` asserts the two agree. The staged copy is
+gitignored: it is a build product of a build product.
+
+### Deviation: the fit budget assertion is left measuring the wrong quantity, knowingly
+
+Build spec 24 says that when reality disagrees with the specification, stop, write the
+discrepancy and the options down, choose deliberately, and record the choice. This is that entry.
+
+`tests/test_surrogate.py::test_the_fit_budget_of_build_spec_10_3_was_met` asserts that the
+Gaussian process fit came in under the 60 s of build spec 10.3, which states that budget for a
+**single threaded** fit. `ufem.surrogate` pins no thread count, so torch takes its default, which
+on this machine is 20 threads over 28 cores. The number the assertion reads out of the manifest
+is therefore how long the fit took while sharing a machine, not how long the fit costs. Four
+refits during P10, all writing byte identical artifacts, measured 65.79, 58.03, 74.0 and 86.4
+seconds as the desktop got busier. P4 measured 54.99 and P5 measured 53.95 on quiet machines, and
+neither of those was the single threaded number either.
+
+Three options were on the table.
+
+- **Widen the budget.** Refused. Build spec 10.3 says to stop and look rather than to widen it,
+  and a budget set to whatever the last measurement happened to be stops catching the regression
+  it exists for.
+- **Pin the fit to one thread**, so the measurement is the quantity the specification names. This
+  is the right fix and it is not a P10 change: it alters how a stage runs, every downstream cache
+  key and digest hangs off that stage's outputs, and the last hour of the last phase is the worst
+  possible time to find out that reduction order was load bearing after all. The evidence that it
+  probably is not, four bitwise identical refits at four different thread contention levels, is
+  encouraging rather than sufficient.
+- **Leave it, write it down, hand it on.** Chosen.
+
+What this costs: on a machine with the artifact store and a busy desktop, `pytest tests` reports
+one failure. Nothing committed is red, because `experiments/results/` is gitignored and the
+assertion skips wherever the store is absent, which is every CI job. What it buys is that the
+gate is still there and still says something true, which is that this fit took longer than 60 s
+on the machine that ran it.
+
+Whoever picks this up: pin the threads, measure the single threaded cost, and set the assertion
+against that with the determinism tests run before and after. If the single threaded fit does not
+come in under 60 s, that is a finding about the fit and build spec 10.3 needs revisiting, which
+is a different conversation from this one.
+
 <!-- BEGIN RESOLVED VERSIONS -->
 
 ### Resolved version matrix, 2026-08-30
