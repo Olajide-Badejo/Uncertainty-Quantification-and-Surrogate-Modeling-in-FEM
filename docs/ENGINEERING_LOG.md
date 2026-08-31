@@ -1150,11 +1150,13 @@ a key that hard codes one signal's unit for two signals is that rule broken quie
 `rmse` and `mae` with the unit stated in the docstring, and all four ablations rerun, which cost
 nothing because the reference was cached and confirmed the reproducibility above.
 
-**Gates.** **606 tests pass** with everything selected, in 11 minutes 42 seconds, up from 579 at
+**Gates.** **606 tests pass** with everything selected, in 10 minutes 21 seconds, up from 579 at
 P8. Twenty four of the new ones are `tests/test_ablations.py`, one per ablation core, the shared
 metric definitions, the README status gate of ground rule 10 and the fragment against its
 artifacts; the other three are the data card's own staleness gate acquiring a seventeenth
-fragment. `ruff check` over the whole tree, `scripts/dash_lint.py` and
+fragment. 587 pass with the slow markers excluded, which is the `test-full` CI job's selection,
+and 458 under `not slow and not fullstack`, which is what the light stack `test-fast` job runs on
+a machine with no torch and no artifact store. `ruff check` over the whole tree, `scripts/dash_lint.py` and
 `scripts/check_file_sizes.py` over 256 tracked files are clean. `latexmk -pdf -halt-on-error`
 builds `report/main.pdf` at **38 pages**, up from 33, with zero LaTeX warnings: no unresolved
 reference and no overfull box.
