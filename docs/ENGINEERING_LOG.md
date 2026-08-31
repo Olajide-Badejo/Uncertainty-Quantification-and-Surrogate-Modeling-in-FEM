@@ -1070,3 +1070,99 @@ generalized: a byte gated document carries only quantities that change when the 
 it, both of which will go stale the moment an ablation changes a fitted model, and both of which
 have a test that will say so. The report gained nothing this phase, deliberately: the UI is not a
 report section, and the model card figures it points at were already committed at P5.
+
+## 2026-08-31, Phase P9: ablations 2 through 5, and a report that is structurally complete
+
+**What shipped.** Four ablation scripts, one shared yardstick, one table fragment, four results
+entries in `docs/ABLATIONS.md`, and three new report sections. `src/ufem/ablation_reference.py`
+refits the production pipeline in the same ten grouped folds the validation stage used and keeps
+its out of fold mean and pointwise variance, so the four rivals can be scored against it on
+identical held out sets. `src/ufem/ablation_table.py` holds the verdict logic and the thresholds
+the five predictions committed. The report gained an ablations section, a limitations section and
+an outlook, and lost its Phase P2 title.
+
+**The prediction commits are the evidence and they are all in place.** `git log` for this branch
+runs: four `docs(ablations): predict ...` commits, then the code, then one results commit per
+ablation. No result commit precedes its prediction, and every prediction is left on the page
+unedited above the number that contradicted it.
+
+**The reference reproduces the shipped numbers exactly, which is the point of it.** The one
+number that had to come out right before anything else could be believed: refitting the
+production pipeline fold by fold gives median out of fold relative L2 errors of 0.23088834480636
+on the force family and 0.07889520498854 on the damage family, against the values the `validate`
+stage committed at P4 to the last digit stored. The stated tolerance was 1e-9 for summation
+order; the measured deviation is 0.0.
+
+**Results, in one place.**
+
+| Ablation | Headline | Production | Ablation | Claims held |
+|---|---|---|---|---|
+| 2. Autoencoder plus GP | median curve L2 | 23.09 % | 20.46 % | 2 of 3 |
+| 3. Deep ensemble, 5 members | median curve L2 | 23.09 % | 19.37 % | 2 of 4 |
+| 4. B-spline coefficients | median curve L2 | 23.09 % | 20.53 % | 1 of 3 |
+| 5. Sobol against thinning | leave one out RMSE at n = 64 | 1929 N | 1680 N | 2 of 3 |
+
+Seven of thirteen committed claims held. The six that failed are more useful than the seven that
+held, and they say one thing between them: every direct curve model beats the production
+reconstruction at curve level, and every one of them is useless at the peak. The autoencoder
+reads a peak load R2 of -0.117 off its own curve and the B-spline reconstruction under predicts
+the peak by 3035 N, 7.7 percent, where the production pipeline is off by 285 N. The deep ensemble
+loses on both uncertainty metrics, NLPD 12.393 against 10.575 and pointwise coverage 0.761
+against 0.791, while beating the production pipeline on both error metrics.
+
+**Wall times, all CPU, all single threaded under the production determinism policy.** The
+production fold reference **492 s** (ten elastic registrations plus 340 Gaussian process fits),
+paid once and cached. Ablation 2 **259.7 s**, of which 104.7 s is training the twenty
+autoencoders and the rest is 120 latent processes; the timebox was 600 s of training and was not
+approached, so no epochs were cut. Ablation 3 **247.5 s**, of which 245.4 s is training the fifty
+ensemble members. Ablation 4 **205.9 s**, almost all of it the 160 coefficient processes.
+Ablation 5 **76.9 s** for 60 process fits. Total 1282 s, 21 minutes, of which the reference is 38
+percent.
+
+**Both neural ablations reproduced bitwise across two independent runs**, which was not planned
+as a determinism test and became one: the first run of ablations 2 and 3 crashed in the metric
+block after training, the metric was fixed, and the reruns produced identical per fold losses and
+identical pooled metrics. Build spec 17.2's GPU relaxation therefore never arose, the ablations
+keep the production bitwise claim, and `docs/DESIGN_DECISIONS.md` records that rather than
+claiming a downgrade nobody needed.
+
+**One thing broke twice and it was the same thing.** A Gaussian log density needs a positive
+variance, and this campaign has stations where the honest predictive variance is exactly zero:
+every run is displacement controlled from zero, so the force and the damage are identically zero
+at the first station, and the damage family is identically zero over an initial span in almost
+every run. Where a fold's training half is constant at a station, the fitted basis has a zero
+mean, zero loadings and a zero truncation residual, so the production variance there is zero by
+construction rather than by overconfidence. The first fix excluded stations where the whole
+observed family is constant, which is the rule the P5 calibration stage already applies, and it
+was not enough: three damage stations vary across all 198 runs while being constant in some
+fold's training half. The second fix intersects that rule with the stations where every model in
+the comparison reports a positive variance, so both sides are scored on the same abscissae and
+the excluded count is recorded beside the metric. One station of 201 is excluded on the force
+family and 87 on the damage family. Nothing was floored (ground rule 4), and the failure was a
+raise with a named diagnostic both times, which is why it cost ten minutes rather than a wrong
+number.
+
+**A units defect was caught by reading the artifact rather than by a test.** The shared metric
+helper named its error keys `rmse_N` and `mae_N`, which is right for a load displacement curve in
+newtons and wrong for a dimensionless damage curve, and the damage block of ablation 2's artifact
+duly carried `"mae_N": 0.1247`. Ground rule 14 says units are typed at every module boundary, and
+a key that hard codes one signal's unit for two signals is that rule broken quietly. Renamed to
+`rmse` and `mae` with the unit stated in the docstring, and all four ablations rerun, which cost
+nothing because the reference was cached and confirmed the reproducibility above.
+
+**Gates.** **606 tests pass** with everything selected, in 10 minutes 21 seconds, up from 579 at
+P8. Twenty four of the new ones are `tests/test_ablations.py`, one per ablation core, the shared
+metric definitions, the README status gate of ground rule 10 and the fragment against its
+artifacts; the other three are the data card's own staleness gate acquiring a seventeenth
+fragment. 587 pass with the slow markers excluded, which is the `test-full` CI job's selection,
+and 458 under `not slow and not fullstack`, which is what the light stack `test-fast` job runs on
+a machine with no torch and no artifact store. `ruff check` over the whole tree, `scripts/dash_lint.py` and
+`scripts/check_file_sizes.py` over 256 tracked files are clean. `latexmk -pdf -halt-on-error`
+builds `report/main.pdf` at **38 pages**, up from 33, with zero LaTeX warnings: no unresolved
+reference and no overfull box.
+
+**What P10 inherits.** A report that is structurally what build spec 20 asks for and a set of
+ablations whose verdicts are computed rather than asserted. The open thread is the one the
+ablations made hard to ignore: four independent models now beat the shipped pipeline at curve
+level while losing at the peak, which is a finding about the reconstruction path, and the
+outlook says so rather than the conclusion quietly not mentioning it.

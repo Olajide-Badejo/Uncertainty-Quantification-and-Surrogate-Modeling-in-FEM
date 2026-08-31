@@ -1115,6 +1115,103 @@ The check is in `scripts/dash_lint.py` beside the other binding law greps, so th
 Ubuntu runs it with no Python stack at all, and `tests/test_ui.py` imports the same function rather
 than reimplementing it. A law enforced in two places eventually gets enforced two ways.
 
+## 2026-08-31, Phase P9: ablations and the complete report
+
+### The ablations compare against a recomputed production side, not the numbers `validate` stored
+
+Build spec 10.6.3 asks for RMSE, negative log predictive density and coverage. The `validate`
+stage stores per curve relative L2 errors and nothing else about the curve, because that is all
+the baseline gate needs, so two of those three metrics have nothing on the production side to
+compare against. `src/ufem/ablation_reference.py` therefore refits the production pipeline in the
+same ten grouped folds, from the same spawned seeds, and keeps its out of fold mean and pointwise
+variance.
+
+The obvious objection is that a second implementation of the production path is exactly how two
+numbers for one quantity come about, which is the defect this project was rebuilt to avoid. Two
+things answer it. The reference does not reimplement anything: it assembles a real
+`ufem.surrogate.SurrogateModel` per fold out of the same `CurveBasis.fit` and `fit_all` the
+surrogate stage uses and calls `predict_curve` on it, so the reconstruction and the variance
+propagation are the shipped ones. And it asserts agreement rather than assuming it: the reproduced
+median curve errors are compared against the ones `validate` committed, with a stated tolerance of
+1e-9 for summation order, and a larger deviation raises. Measured, the deviation is exactly zero
+in float64 for both the force and the damage families, which is the strongest available evidence
+that the two harnesses are one harness.
+
+Cost: 492 seconds, ten elastic registrations and 340 Gaussian process fits, paid once and cached
+in the artifact store with its own manifest for the three ablations that read it.
+
+### Whether a prediction held is decided by code, against transcribed thresholds
+
+`src/ufem/ablation_table.py` carries one function per ablation that evaluates its committed
+claims against the measured artifact, with every numeric threshold from `docs/ABLATIONS.md`
+written as a named constant carrying the date its prediction was committed. The table fragment
+the report inputs is built from those functions, so the verdict column is a computation rather
+than a sentence written after seeing the number, and moving a goalpost means editing a constant
+in a file whose history shows it.
+
+This is the mechanical half of ground rule 12. The commit order is the other half and neither
+substitutes for the other: code cannot prove a prediction was made first, and a commit date
+cannot prove the comparison was applied as written.
+
+### A degenerate station is dropped from a density, never floored
+
+Every run is displacement controlled from zero, so the force and the damage are identically zero
+at the first station and the damage family is identically zero over an initial span in most runs.
+Where a fold's training half is constant at a station, the fitted basis has a zero mean, zero
+loadings and a zero truncation residual there, so the production predictive variance is exactly
+zero and a Gaussian log density is undefined.
+
+Ground rule 4 forbids the obvious repair. `ufem.ablation_reference.scored_stations` instead
+intersects the stations where the observed family varies with the stations where every model in
+the comparison reports a strictly positive variance, and both sides are then scored on that same
+set with the excluded count recorded beside the metric. It is the rule the P5 calibration stage
+already applies to the sup norm score, reused rather than reinvented. On the force family it
+excludes one station of 201; on the damage family, 87.
+
+### The ablation architectures are stated, not searched
+
+No hyperparameter search runs on either side of any ablation. At 198 runs a search on the
+ablation side would be tuning a rival against the test folds, and a search on both sides would
+cost more compute than the whole pipeline and still not settle anything at this sample size. So
+each architecture is declared in its script with the reasoning for its size, the numbers are what
+that architecture produces, and `docs/ABLATIONS.md` says in as many words that a different
+architecture could reverse any row. An ablation is a bound, not a tournament.
+
+### The B-spline knot placement is a statistic of the training half of each fold
+
+The interior knots sit at quantiles of a fifty fifty mixture of a uniform density over the stroke
+and a normal density on the median displacement at peak, which is recomputed inside every fold
+from its training runs only. Placing knots by a fixed rule would have been simpler; placing them
+by a statistic of all 198 curves would have leaked. The measured knot centers move between 10.95
+and 11.25 mm across the ten folds, which is small, and the leak it avoids is real anyway.
+
+### The design study is subsampling, and the artifact says so
+
+Ablation 5 cannot rerun the campaign under a Sobol design, because that needs Abaqus. It
+subsamples the 198 runs that exist and measures how much the space filling quality of the retained
+points moves the surrogate error at a fixed budget. The mapping from a Sobol point to a real run
+is a greedy nearest unclaimed neighbour in standardized coordinates, the caveat is written into
+the JSON artifact next to the numbers rather than only into the prose, and the degeneracy at
+n = 198, where both selections must return the whole population, is asserted in the script rather
+than reported as a vanishing difference.
+
+### The report was retitled and its abstract rewritten, because it is no longer the P2 deliverable
+
+The document has carried the P2 title, "Audit and Censoring Analysis", since the second week, and
+the abstract said so in its last sentence. At P9 it covers the campaign, the surrogate, the
+calibration, the sensitivity gate, the reliability analysis, the ablations, the limitations and
+the outlook, so both were rewritten to describe what the report now is. Every number added to the
+abstract arrives through a generated macro like every other number in the document.
+
+### The GPU relaxation of build spec 17.2 did not arise
+
+Build spec 3 reserves the GPU for the neural ablations and 17.2 downgrades their reproducibility
+claim to statistically reproducible in exchange. The installed torch is the CPU build, the
+ablations ran single threaded on CPU under the production determinism policy, and both neural
+ablations reproduced their fold by fold numbers exactly across two separate runs. So the
+downgrade is not claimed and the ablations keep the bitwise claim the rest of the pipeline makes.
+The wall times are CPU wall times and are in `docs/ENGINEERING_LOG.md`.
+
 <!-- BEGIN RESOLVED VERSIONS -->
 
 ### Resolved version matrix, 2026-08-30
