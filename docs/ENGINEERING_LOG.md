@@ -1270,13 +1270,37 @@ changed. Nothing in the definition of done depends on the number. The one place 
 mechanically is `scripts/make_release.py`, which refuses to print a release command while
 `pyproject.toml` still declares a `.dev` version.
 
-**Gates.** **629 tests pass** with everything selected, up from 606 at P9; the 23 new ones are
+**The fit budget assertion went red on a busy machine, exactly as P5 predicted it would.** The
+sweep's first full suite run was done while a `latexmk` build and two other interpreters were
+running on the same box, and `tests/test_surrogate.py::test_the_fit_budget_of_build_spec_10_3_was_met`
+failed: the determinism test refitted the surrogate stage in place and the manifest came back
+with `gp_fit_wall_time_s = 65.79` against the 60 s budget. The P5 entry above had already
+diagnosed this one in as many words, after the same assertion went red at 61.28 s: the budget is
+not systematically exceeded, the assertion is on a wall clock, and a wall clock assertion with 14
+percent of run to run spread and a 10 percent margin will go red again on a busy machine.
+
+It was handled the way build spec 10.3 says, which is to look rather than to widen the budget.
+Refitting the stage with nothing else running measures **58.03 s**, inside the budget, and every
+one of the twelve artifacts it wrote reproduced its digest bitwise, which is the determinism
+claim doing its job: the only thing that changed in the manifest was the clock. The budget stays
+at 60 s and the assertion stays as it is. What is worth carrying forward is that this is the only
+gate in the project whose verdict depends on what else the machine is doing, so it should be read
+as a regression alarm rather than as a pass or fail, and it should be rechecked on an idle
+machine before anybody acts on it.
+
+**Gates.** **629 tests pass** with everything selected on an idle machine, up from 606 at P9; the 23 new ones are
 `tests/test_readme_consistency.py`. 610 pass under `not slow`, which is the `test-full` CI job's
 selection, and 481 under `not slow and not fullstack`, which is what the light stack `test-fast`
 job runs on a machine with no torch and no artifact store. `ruff check src tests scripts`,
 `scripts/dash_lint.py` and `scripts/check_file_sizes.py` over the tracked tree are clean.
 `latexmk -pdf -halt-on-error` builds `report/main.pdf` at **38 pages**, 1.87 MB, with zero
 overfull boxes and zero LaTeX warnings.
+
+The first full run of the sweep was 627 of 629, and both failures were the machine rather
+than the tree: the fit budget assertion above, and the README staleness gate, which caught
+a wording change made to an injected block while the suite was midway through running. The
+second one is the gate working, on the worst possible timing, and it is the reason the
+final run was done with nothing else on the machine.
 
 **What the release inherits.** A repository whose front page is generated, whose every published
 number resolves to a manifest, and whose two honest losses, the curve level reconstruction and
