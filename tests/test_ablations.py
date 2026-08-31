@@ -331,10 +331,15 @@ class TestTheSharedMetrics:
 class TestTheReadmeAgreesWithTheArtifacts:
     """Ground rule 10: a README claim that disagrees with the artifact is a CI failure.
 
-    The same gate the P5 and P7 rows carry, applied to the P9 row. An ablation verdict is
-    exactly the kind of claim that ages badly, because the count of surviving predictions moves
-    the moment any measurement does, and a status row still saying seven of thirteen after one
-    of them flipped would be the README claiming a result the artifacts no longer support.
+    The same gate the calibration and reliability numbers carry, applied to the ablation
+    verdict. An ablation verdict is exactly the kind of claim that ages badly, because the count
+    of surviving predictions moves the moment any measurement does, and a page still saying nine
+    of sixteen after one of them flipped would be the README claiming a result the artifacts no
+    longer support.
+
+    Until P10 this read the README's phase status table, which counted ablations 2 through 5
+    because that was the phase the row belonged to. P10 removed the table and injected an
+    evidence sentence that covers all five, so the count here covers all five too.
     """
 
     @pytest.fixture(scope="class")
@@ -350,31 +355,28 @@ class TestTheReadmeAgreesWithTheArtifacts:
         except AblationMissing as err:
             pytest.skip(f"the ablations have not been run for this config hash: {err}")
 
-    def test_the_status_row_quotes_the_measured_verdict(self, repo_root, payloads):
+    def test_the_readme_quotes_the_measured_verdict(self, repo_root, payloads):
+        import re
+
         from ufem.ablation_table import verdict_summary
 
-        # Ablations 2 through 5 only: ablation 1 belongs to phase P3 and its verdict is
-        # already quoted in the P3 section of the report. The row under test is the P9 one.
         summary = verdict_summary(payloads)
-        phase = [summary[number] for number in (2, 3, 4, 5)]
-        held = sum(record["n_held"] for record in phase)
-        total = sum(record["n_claims"] for record in phase)
+        held = sum(record["n_held"] for record in summary.values())
+        total = sum(record["n_claims"] for record in summary.values())
         spline = payloads[4]
-        rows = [
-            line
-            for line in (repo_root / "README.md").read_text(encoding="utf-8").splitlines()
-            if line.startswith("| P9 |")
-        ]
-        assert len(rows) == 1, "the README status table must carry exactly one P9 row."
-        row = rows[0]
+        # Whitespace collapsed: the injector wraps its prose blocks, and the wrapping is
+        # presentation of the source rather than content.
+        readme = re.sub(
+            r"\s+", " ", (repo_root / "README.md").read_text(encoding="utf-8")
+        )
         for value in (
             f"{held} of the {total} committed claims held",
             f"{spline['ablation']['peak']['peak_bias_N']:.0f} N",
             f"{spline['production']['peak']['peak_bias_N']:.0f} N",
         ):
-            assert value in row, (
-                f"the README P9 status row does not quote {value!r}, which is what the "
-                "ablation artifacts record. Ground rule 10: fix the README, not this test."
+            assert value in readme, (
+                f"the README does not quote {value!r}, which is what the ablation artifacts "
+                "record. Ground rule 10: rerun scripts/readme_inject.py, do not edit this test."
             )
 
     def test_the_committed_table_fragment_matches_the_artifacts(self, repo_root, payloads):

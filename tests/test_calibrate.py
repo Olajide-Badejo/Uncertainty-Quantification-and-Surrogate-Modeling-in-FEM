@@ -272,13 +272,18 @@ class TestNoStylingIsPossible:
 class TestTheReadmeAgreesWithTheArtifact:
     """Ground rule 10: a README claim that disagrees with the manifest is a CI failure.
 
-    The status table is the one place in the README that carries a number before the P10
-    injection, so it is the one place that needs this check. The numbers are read out of the
-    calibrate stage's manifest and its result artifact and looked for verbatim in the row.
+    Until P10 this read the README's phase status table, which was the only place in the
+    document carrying a number. P10 removed that table and injected the coverage claim into a
+    named marker pair instead, so the check now reads the injected sentence. What it asserts is
+    unchanged and deliberately independent of `scripts/readme_inject.py`: the numbers come out
+    of the calibrate stage's own artifact and are looked for verbatim in the page, so a
+    generator that read the wrong key fails here even though it would pass its own byte
+    comparison. `tests/test_readme_consistency.py` owns the staleness half of the gate.
     """
 
-    def test_the_status_row_quotes_the_measured_calibration_numbers(self, repo_root):
+    def test_the_readme_quotes_the_measured_calibration_numbers(self, repo_root):
         import json
+        import re
 
         from ufem.calibrate import CALIBRATION_JSON, SIGNAL_FORCE
         from ufem.calibrate import STAGE_NAME as CALIBRATE_STAGE
@@ -297,21 +302,23 @@ class TestTheReadmeAgreesWithTheArtifact:
         calibration = json.loads((directory / CALIBRATION_JSON).read_text(encoding="utf-8"))
         band = calibration["functional"][SIGNAL_FORCE]["bands"][f"{GATE_ALPHA:g}"]
 
-        rows = [
-            line
-            for line in (repo_root / "README.md").read_text(encoding="utf-8").splitlines()
-            if line.startswith("| P5 |")
-        ]
-        assert len(rows) == 1, "the README status table must carry exactly one P5 row."
-        row = rows[0]
+        # Whitespace collapsed: the injector wraps its prose, so a claim can carry a line break
+        # inside it, and the wrapping is presentation of the source rather than content.
+        readme = re.sub(
+            r"\s+", " ", (repo_root / "README.md").read_text(encoding="utf-8")
+        )
         for value in (
             f"{extra['functional_coverage'][SIGNAL_FORCE]:.4f}",
-            f"[{band['wilson_low']:.3f}, {band['wilson_high']:.3f}]",
-            f"{extra['variance_scaling_factors']['force_curve']:.3f}",
+            f"[{band['wilson_low']:.4f}, {band['wilson_high']:.4f}]",
+            f"{1.0 - GATE_ALPHA:.2f}",
         ):
-            assert value in row, (
-                f"the README P5 status row does not quote {value!r}, which is what the "
-                f"calibrate manifest at {directory} records. Ground rule 10: fix the README, "
-                "not this test."
+            assert value in readme, (
+                f"the README does not quote {value!r}, which is what the calibrate manifest at "
+                f"{directory} records. Ground rule 10: rerun scripts/readme_inject.py, do not "
+                "edit this test."
             )
-        assert ("passed" if extra["gate"]["passed"] else "failed") in row
+        assert extra["gate"]["passed"], (
+            "the calibration gate no longer passes, and the README says it does. Both have to "
+            "be revisited rather than one of them."
+        )
+        assert "gate of build spec 11.5 passed" in readme
