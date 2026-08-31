@@ -300,6 +300,7 @@ UFEM_2.0/
 | [The report](https://github.com/Olajide-Badejo/Uncertainty-Quantification-and-Surrogate-Modeling-in-FEM/releases/latest) | The full write up, attached to the release as `main.pdf`. Method, verification, results, limitations, outlook. |
 | [`docs/DATA_CARD.md`](docs/DATA_CARD.md) | The campaign: design, extraction split, censoring bias tables, completion model, validity domain. Generated. |
 | [`docs/MODEL_CARD.md`](docs/MODEL_CARD.md) | The surrogate: scope, validity domain, out of sample table, calibration status, known failure modes. Generated. |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | The pipeline stage by stage and the artifact contract each one writes against. |
 | [`docs/ABLATIONS.md`](docs/ABLATIONS.md) | Each ablation's predicted outcome, committed before the measurement existed, then the result and the verdict. |
 | [`docs/DEFECT_LOG.md`](docs/DEFECT_LOG.md) | Every bug this project shipped and caught, with the regression test that now covers it. |
 | [`docs/DESIGN_DECISIONS.md`](docs/DESIGN_DECISIONS.md) | Dated decisions, the resolved version matrix, and every deliberate deviation from the specification. |
