@@ -195,10 +195,17 @@ positions, and 59 ms end to end in a headless browser, both in the P8 entry of
 `docs/ENGINEERING_LOG.md`. The test is in `tests/test_ui.py` and skips with a named reason when
 no browser is installed, since `pip install -e .[dev]` does not bring one.
 
-`docs/media/ufem_lab.gif` is 0.81 MB, recorded from the running dashboard by
-`scripts/capture_ui_gif.py`, and is embedded at the top of the README.
+`docs/media/ufem_lab.gif` is 1.49 MB, 960 by 720 px, 17.72 s, recorded from the running
+dashboard by `scripts/capture_ui_gif.py` and embedded at the top of the README.
 `tests/test_laws.py::test_the_readme_gif_is_committed` and
 `tests/test_readme_consistency.py::test_the_readme_shows_the_dashboard_gif_first` both check it.
+
+The first capture was rejected on review for clipping its panels and for demonstrating nothing,
+and it was replaced rather than patched: the recapture is a five beat scripted demonstration in
+a window every panel fits inside, three of whose beats fail the capture if their interaction did
+not take effect. The frames were exported as PNGs and inspected one by one before it was
+committed, which is the only way a framing claim can be checked. Both measurements are in the
+P10 entry of `docs/ENGINEERING_LOG.md`.
 
 ## 10. No em or en dash anywhere; no file over 5 MB; no venv artifact; no absolute path; no bare except; no banned identifier
 

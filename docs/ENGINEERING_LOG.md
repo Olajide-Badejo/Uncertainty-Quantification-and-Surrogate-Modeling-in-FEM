@@ -1288,9 +1288,71 @@ gate in the project whose verdict depends on what else the machine is doing, so 
 as a regression alarm rather than as a pass or fail, and it should be rechecked on an idle
 machine before anybody acts on it.
 
-**Gates.** **629 tests pass** with everything selected on an idle machine, up from 606 at P9; the 23 new ones are
-`tests/test_readme_consistency.py`. 610 pass under `not slow`, which is the `test-full` CI job's
-selection, and 481 under `not slow and not fullstack`, which is what the light stack `test-fast`
+**The GIF was rejected on review, and the rejection was right.** The repo owner's words: parts
+are cut off, and it does not really show the usefulness of the project or how to use it. Both
+were true and both had one root cause, which is that the capture was written to satisfy build
+spec 15.1's frame rate, width and duration rather than to be watched. It was recorded in a 1440
+by 900 viewport, which is shorter than every panel it was pointed at: the Predict panel is 1607
+px tall and the Dataset panel 2433, so the recording clipped both. And its interaction was a
+slider sweep, a scroll and a second slider sweep, which shows that the thing moves without
+showing what any of it is for.
+
+The recapture is a scripted demonstration in five beats: the strength sweep with the calibrated
+band morphing under it, then a scroll to the eleven quantities of interest so their jackknife
+plus intervals can be read; the inputs driven into the censored corner until the validity
+warning names P(complete) = 0.490 against the stamped threshold of 0.5 and every curve grays
+out, then back; a completed run clicked in the design matrix, the selection ring moving to it,
+and a scroll to the finite element curve drawn against the surrogate at the same three inputs;
+the limit state threshold sweeping while the failure probability, its standard error, its
+Wilson interval and its conservative bound recount; and a close on the model card's provenance.
+
+Two things made that possible to get right rather than to guess at. The viewport is now 1280 by
+960 downscaled to 960 by 720, and every beat names an absolute scroll offset measured against
+the rendered layout: the Predict table starts at 1058 and is 457 tall, the Dataset overlays run
+1553 to 2329 with the run picker under them, and the Reliability slider, recount table and
+density panel span 678 to 1478. All three spans are shorter than the window. And `--frames DIR`
+writes every distinct captured frame out as a PNG, which is the only way a framing claim can be
+checked at all: all five beats were opened and looked at before the GIF was committed, and
+nothing in any of them is clipped.
+
+Three of the beats verify themselves rather than hoping. The capture raises if the validity
+warning does not appear at the corner it drives into, if the warning is still showing after the
+recovery sweep, and if clicking the design matrix does not change the selected run. That last
+click is placed from Plotly's own axis mapping onto the completed run nearest the centre of the
+design rather than from a guessed pixel into a splom, so it lands on a completed point by
+construction and says so if it does not. **217 captured frames stored as 91, 17.72 s of
+playback, 960 by 720 px, 1.49 MB**, captured in 29.8 s, against 0.81 MB and 14.66 s before.
+
+The size assertion moved while this was open. It checked build spec 15.1's 15 MB ceiling, which
+is not the limit that binds: build spec 3.3 allows no tracked file over 5 MB and grants this
+file no exemption. A capture between those two numbers would have passed the capture script and
+failed `scripts/check_file_sizes.py` one commit later, so the script now checks the smaller of
+the two and imports it from the gate that owns it.
+
+**The links pass.** The second half of the same review: every useful destination reachable in
+one click, from an obvious place. Added the report PDF as a direct release download, this
+release and the frozen v1.0.0 release, the releases page, the CI and report workflow run
+histories, the issue tracker, CONTRIBUTING, LICENSE, the quarantine, audit reference and
+processed data notices, the v1_legacy tree notice, and ARCHITECTURE, which the document table
+had simply been missing. The first screen carries the report, the dashboard and the build
+specification above the fold.
+
+Two of those are release dependent, so they are injected rather than typed, which surfaced a
+trap worth recording: `gh` names a release asset after the file on disk and `#` only sets a
+display label, so a README pointing at `main.pdf` while the release attaches something else is
+a permanent 404 that nobody notices until they click it. `scripts/make_release.py` now stages
+the PDF under `ufem-2.0-report-v<version>.pdf` and `scripts/readme_inject.py` imports that name
+from it, with a test asserting the two agree.
+
+UFEM Lab also finally has a section in the README to point at. The dashboard had one line of
+quick start and nothing else, which is a strange omission for the thing at the top of the page.
+It now has its five panels described and an anchor, which is what the GIF caption and the top
+link resolve to.
+
+**Gates.** **634 tests pass** with everything selected on an idle machine, up from 606 at
+P9; the 28 new ones are
+`tests/test_readme_consistency.py`. 615 pass under `not slow`, which is the `test-full` CI job's
+selection, and 486 under `not slow and not fullstack`, which is what the light stack `test-fast`
 job runs on a machine with no torch and no artifact store. `ruff check src tests scripts`,
 `scripts/dash_lint.py` and `scripts/check_file_sizes.py` over the tracked tree are clean.
 `latexmk -pdf -halt-on-error` builds `report/main.pdf` at **38 pages**, 1.87 MB, with zero

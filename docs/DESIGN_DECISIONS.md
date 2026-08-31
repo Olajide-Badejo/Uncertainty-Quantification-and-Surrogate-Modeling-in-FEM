@@ -1311,6 +1311,58 @@ publishing are the only step in this project that rerunning a stage cannot undo,
 with a human, and there is deliberately no `--force` and no `--yes`: a check that failed is a
 release that is not ready.
 
+### The GIF is framed by measured scroll offsets, not by a taller window
+
+The first capture clipped its panels because it used one viewport and one scroll position for a
+page whose panels are 1607 and 2433 px tall. The obvious fix, a viewport tall enough to hold the
+tallest panel, was rejected: it would have produced a GIF around 960 by 1600, which no reader
+sees whole either, and it would have shrunk every glyph in the downscale. What the recapture does
+instead is name an absolute scroll offset per beat, each measured against the rendered layout, so
+that every beat's subject is wholly inside a 1280 by 960 window. The frame is the same size all
+the way through, because a GIF cannot change dimensions, and the page moves under it.
+
+The offsets are constants in `scripts/capture_ui_gif.py` with the measurements that justify them
+in the comment above. They will go stale if the panels are reordered, and the answer to that is
+`--frames DIR`, which writes every distinct captured frame out as a PNG: a framing claim can only
+be checked by looking, so the script makes looking cheap rather than asserting something it
+cannot know.
+
+### The capture asserts that its own interactions took effect
+
+A recording that shows a slider moving and nothing happening is worse than no recording, and it
+fails silently: the script exits 0, the GIF is written, and the defect is only visible to someone
+who watches it. So the three beats that depend on an interaction check for its effect. The
+censored corner beat raises if the validity warning did not appear and again if it is still there
+after the recovery sweep; the dataset beat raises if the click did not change the selected run.
+
+The click is the interesting one. The design matrix is a Plotly splom, and a click on a guessed
+pixel inside it can land on a failed run, which pops a notification instead of an overlay. The
+script instead reads the trace's own dimension values and axis mapping out of the figure, picks
+the completed run nearest the centre of the executed design, and converts that to a pixel through
+`l2p`. It lands on a completed point by construction, and it says which one on the way past.
+
+### The GIF's size gate is the tracked file limit, not the one build spec 15.1 names
+
+Build spec 15.1 allows 15 MB. Build spec 3.3 allows no tracked file over 5 MB and grants this
+file no exemption, and `scripts/check_file_sizes.py` enforces that on every file git tracks. A
+capture between the two would have passed its own script and failed the repository gate one
+commit later, which is a check that exists and does not work. The capture script now takes the
+smaller of the two and imports the number from the gate that owns it. The recapture measures
+1.49 MB, so nothing was actually at risk; the reason to fix it now is that the next capture will
+be somebody else's.
+
+### The release asset filename is defined once, in the release script
+
+`gh release create` names an asset after the file on disk; the `#` suffix sets a display label
+and nothing else. A README linking `releases/download/v1.1.0/main.pdf` while the release attaches
+a file named anything else is a 404 that nobody discovers until a reader clicks it, and the
+README is the one document where a dead link costs the most.
+
+So `scripts/make_release.py` owns `report_asset_name`, stages `report/main.pdf` under that name
+before printing the upload command, and `scripts/readme_inject.py` imports the function to build
+the download URL. `tests/test_readme_consistency.py` asserts the two agree. The staged copy is
+gitignored: it is a build product of a build product.
+
 <!-- BEGIN RESOLVED VERSIONS -->
 
 ### Resolved version matrix, 2026-08-30
