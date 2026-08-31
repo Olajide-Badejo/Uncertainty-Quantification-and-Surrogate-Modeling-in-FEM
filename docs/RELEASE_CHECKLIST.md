@@ -245,6 +245,24 @@ decision is recorded with its date in `docs/DESIGN_DECISIONS.md`. Nothing in the
 done depends on the number, and the version string reaches the badge, the README's versioning
 block and `ufem doctor` from `pyproject.toml`, which declares it once.
 
+## What the release still needs, and who does it
+
+P10 prepared the release and did not perform it. Three things are left, in this order, and all
+three belong to whoever tags:
+
+1. **Merge `phase/p10-release` into `main`.** `scripts/make_release.py` refuses to run anywhere
+   else, because build spec 21 tags from `main` only.
+2. **Drop the development suffix, in a commit of its own.** `pyproject.toml` and
+   `src/ufem/__init__.py` both declare `1.1.0.dev0`; the release is `1.1.0`. Rerun
+   `ufem doctor` afterwards so the resolved version matrix at the bottom of
+   `docs/DESIGN_DECISIONS.md` agrees, and `python scripts/readme_inject.py` so the README's
+   versioning block does. `scripts/make_release.py` refuses to print a release command while the
+   suffix is still there, which is the only place this is enforced mechanically.
+3. **Run `python scripts/make_release.py` and then the command it prints.** The script builds the
+   PDF, verifies the branch, the tree, the three generated documents and both lints, and prints
+   the `gh release create` line with `report/main.pdf` attached. It does not run `gh`, and it has
+   no override flag: tagging is the one step in this project that rerunning a stage cannot undo.
+
 ## What is deliberately not claimed at this release
 
 Track B is not started. The corrected Abaqus campaign of build spec section 14, with fracture
