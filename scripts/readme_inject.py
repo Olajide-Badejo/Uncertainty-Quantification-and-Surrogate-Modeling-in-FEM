@@ -577,8 +577,9 @@ def block_reliability(data: dict[str, Any]) -> str:
     unit, scale = QOI_DISPLAY[limit["target"]]
     validity = propagation["validity"]
     return (
-        f"**Reliability.** {int(propagation['context']['n_samples'])} Monte Carlo draws through "
-        f"the calibrated surrogate put the probability that the peak load falls below its "
+        f"**Reliability.** A Monte Carlo of "
+        f"{int(propagation['context']['n_samples'])} draws through the calibrated surrogate "
+        f"puts the probability that the peak load falls below its "
         f"{_fmt(float(limit['threshold']) * scale, 1)} {unit} characteristic value at "
         f"{_fmt(limit['pf_point'], 4)}, binomial standard error "
         f"{_fmt(limit['pf_standard_error'], 5)}, against a surrogate aware conservative bound of "
@@ -602,9 +603,10 @@ def block_evidence(data: dict[str, Any]) -> str:
     total = sum(record["n_claims"] for record in ablations.values())
     spline = data["ablation_payloads"][4]
     return (
-        f"**Evidence.** {len(ablations)} ablations were run against the production pipeline in "
-        f"the same fold harness, each one's prediction committed before its measurement existed "
-        f"so that the commit order is the evidence; {held} of the {total} committed claims held. "
+        f"**Evidence.** The design choices were measured rather than assumed: "
+        f"{len(ablations)} ablations ran against the production pipeline in the same fold "
+        f"harness, each one's prediction committed before its measurement existed so that the "
+        f"commit order is the evidence, and {held} of the {total} committed claims held. "
         f"The sharpest single pair of numbers in them is the B-spline rival's peak load bias of "
         f"{float(spline['ablation']['peak']['peak_bias_N']):.0f} N against the shipped "
         f"pipeline's {float(spline['production']['peak']['peak_bias_N']):.0f} N on the same "
@@ -632,10 +634,10 @@ def block_caveats(data: dict[str, Any]) -> str:
             f"{int(censoring['n_designed'])} runs produced nothing and the failures cluster, so "
             f"the survivors are a biased subsample and every number here is conditional on the "
             f"validity domain.",
-            f"- **The whole curve is where the pipeline leaks.** "
-            f"{curve['n_beaten_by']} of the baselines reconstruct the force curve with a lower "
-            f"median relative L2 than the registered and reduced surrogate does, and the table "
-            f"above says which.",
+            f"- **The whole curve is where the pipeline leaks.** The force curve is "
+            f"reconstructed at a lower median relative L2 by {curve['n_beaten_by']} of the "
+            f"baselines than by the registered and reduced surrogate, and the table above says "
+            f"which.",
         ]
     )
 

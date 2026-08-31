@@ -135,22 +135,24 @@ that achieves it is not free: its median half width on the force curves is 25.70
 
 <!-- BEGIN INJECTED: reliability -->
 
-**Reliability.** 100000 Monte Carlo draws through the calibrated surrogate put the probability
-that the peak load falls below its 33.2 kN characteristic value at 0.0479, binomial standard
-error 0.00068, against a surrogate aware conservative bound of 0.2654 obtained by counting a
-failure whenever the calibrated interval crosses the threshold. 46.6 percent of the sample fell
-outside the validity domain, and no probability below 0.0001 is claimed at 198 training runs.
+**Reliability.** A Monte Carlo of 100000 draws through the calibrated surrogate puts the
+probability that the peak load falls below its 33.2 kN characteristic value at 0.0479, binomial
+standard error 0.00068, against a surrogate aware conservative bound of 0.2654 obtained by
+counting a failure whenever the calibrated interval crosses the threshold. 46.6 percent of the
+sample fell outside the validity domain, and no probability below 0.0001 is claimed at 198
+training runs.
 
 <!-- END INJECTED: reliability -->
 
 <!-- BEGIN INJECTED: evidence -->
 
-**Evidence.** 5 ablations were run against the production pipeline in the same fold harness,
-each one's prediction committed before its measurement existed so that the commit order is the
-evidence; 9 of the 16 committed claims held. The sharpest single pair of numbers in them is the
-B-spline rival's peak load bias of -3035 N against the shipped pipeline's -285 N on the same
-folds: the direct curve model reconstructs better and predicts the peak far worse. Every
-prediction, result and verdict is in `docs/ABLATIONS.md`.
+**Evidence.** The design choices were measured rather than assumed: 5 ablations ran against the
+production pipeline in the same fold harness, each one's prediction committed before its
+measurement existed so that the commit order is the evidence, and 9 of the 16 committed claims
+held. The sharpest single pair of numbers in them is the B-spline rival's peak load bias of
+-3035 N against the shipped pipeline's -285 N on the same folds: the direct curve model
+reconstructs better and predicts the peak far worse. Every prediction, result and verdict is in
+`docs/ABLATIONS.md`.
 
 <!-- END INJECTED: evidence -->
 
@@ -166,8 +168,8 @@ prediction, result and verdict is in `docs/ABLATIONS.md`.
   fragility of the beam.
 - **The design is censored.** 202 of 400 runs produced nothing and the failures cluster, so the
   survivors are a biased subsample and every number here is conditional on the validity domain.
-- **The whole curve is where the pipeline leaks.** 3 of the baselines reconstruct the force
-  curve with a lower median relative L2 than the registered and reduced surrogate does, and the
+- **The whole curve is where the pipeline leaks.** The force curve is reconstructed at a lower
+  median relative L2 by 3 of the baselines than by the registered and reduced surrogate, and the
   table above says which.
 
 <!-- END INJECTED: caveats -->
