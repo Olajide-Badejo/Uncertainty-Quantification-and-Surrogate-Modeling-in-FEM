@@ -8,9 +8,10 @@ manifest or it does not get published.**
 
 *[UFEM Lab](#ufem-lab-the-local-dashboard) (`ufem lab`), recorded from the running dashboard:
 the calibrated prediction morphing under a strength sweep, the quantities of interest with
-their conformal intervals, a query driven into the censored corner until the model refuses to
-speak, one finite element run against the surrogate's prediction at the same inputs, and a
-limit state threshold recounting the propagated Monte Carlo sample. Every number on those
+their conformal intervals, a query driven into the censored corner until the prediction grays
+out and names the corner it fell into, one finite element run against the surrogate's
+prediction at the same inputs, and a limit state threshold recounting the propagated Monte
+Carlo sample. Every number on those
 panels was read from an artifact the pipeline wrote.*
 
 <!-- BEGIN INJECTED: toplinks -->
@@ -219,7 +220,8 @@ the top of this page shows. Five panels:
 
 - **Predict.** Three sliders over the executed design. The calibrated curve, its simultaneous
   band and every quantity of interest with its conformal interval repaint as you move them. A
-  query that lands in the censored corner is grayed out and told why, rather than answered.
+  query that lands in the censored corner is grayed out and told which corner it fell into: the
+  shape stays readable, and nothing about it says the number under the cursor is trustworthy.
 - **Dataset.** The design as it was executed, completed against failed, with the fitted
   completion probability surface under it. Click a completed point and the finite element run
   is drawn against the surrogate's prediction at the same three inputs.
