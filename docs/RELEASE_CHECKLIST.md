@@ -73,6 +73,15 @@ recorded with its run URL and the specific job it stopped, in the "CI proof of f
 entry of `docs/ENGINEERING_LOG.md`. The fifth run in that table is the green one with all four
 faults reverted.
 
+One test in the suite has a verdict that depends on what else the machine is doing, and it is
+named here rather than left to be discovered: `test_the_fit_budget_of_build_spec_10_3_was_met`
+asserts on a wall clock with a 10 percent margin against a fit whose run to run spread is about
+14 percent. It went red during this sweep's first full run, under concurrent load, and green at
+58.03 s with nothing else running, with every artifact reproducing its digest bitwise both
+times. The budget was not widened. The P5 and P10 entries of the engineering log carry both
+measurements. Read that assertion as a regression alarm and recheck it on an idle machine before
+acting on it.
+
 ## 3. Simultaneous ninety percent functional bands and scalar jackknife plus intervals have leave one out coverage whose Wilson interval contains 0.90
 
 - [x] **PASS.**
