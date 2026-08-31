@@ -1212,6 +1212,105 @@ ablations reproduced their fold by fold numbers exactly across two separate runs
 downgrade is not claimed and the ablations keep the bitwise claim the rest of the pipeline makes.
 The wall times are CPU wall times and are in `docs/ENGINEERING_LOG.md`.
 
+## 2026-08-31, Phase P10: final QA, the README, the release
+
+### Deviation: the release is tagged `v1.1.0`, not the `v2.0.0` the specification names
+
+Build spec section 22 ends the roadmap with "P10 final QA, README injection, v2.0.0" and section
+23 opens with "`v2.0.0` is taggable when every statement below is true". Every one of those twelve
+statements was swept at P10 and the sweep is in `docs/RELEASE_CHECKLIST.md`. The tag is
+nevertheless `v1.1.0`, by the repository owner's decision, and this entry is here so the next
+reader can tell that from a mistake.
+
+The reason is what a major version communicates. The predecessor is `v1.0.0` and is preserved
+frozen in `v1_legacy/`; this work is the same project's second published state, not a second
+project, and it exposes no interface that anybody depends on and that changed. A major bump would
+assert a break that did not happen. The specification's "2.0" is the name of the rebuild, which is
+why the repository directory and the report title still carry it, and the version string is a
+separate thing from the name.
+
+Nothing in the definition of done depends on the number. The version is declared once, in
+`pyproject.toml`, and reaches the badge, the README's versioning block, `ufem doctor` and every
+manifest from there. `scripts/make_release.py` refuses to release while that string still carries
+its `.dev` suffix, which is the only place the choice is enforced mechanically.
+
+### The README's numbers are injected into named marker pairs, not one block
+
+P0 left a single `BEGIN INJECTED RESULTS` pair in the README as a placeholder. P10 replaced it
+with eleven named pairs (`badges`, `scope`, `schematic`, `results`, `coverage`, `reliability`,
+`caveats`, `laws`, `quickstart`, `versioning`, `gates`), each owned by one builder function in
+`scripts/readme_inject.py`. One block would have forced every number in the document into a
+single slab at the top, which is the shape of a generated page rather than of a page somebody
+reads: a reader wants the reliability sentence under the reliability heading. Named pairs also
+make the failure mode legible, because a stale block is now a stale block with a name.
+
+The mermaid schematic is inside a marker pair for the same reason as the tables. Its node labels
+carry counts, and a diagram is exactly the place where a number goes stale unnoticed, because
+nobody diffs a picture.
+
+### The README's wall time claim is bucketed to five minutes, on purpose
+
+`docs/DEFECT_LOG.md` records the same lesson twice: a byte gated document must not carry a
+quantity that moves without a measurement moving. It cost the model card a stale wall time and
+then a stale git commit. The README is now byte gated by `tests/test_readme_consistency.py`, and
+the regeneration wall time it quotes is the sum of ten stage manifests' `wall_time_s`, every one
+of which is rewritten whenever its stage is rerun while reproducing its outputs bitwise. The
+determinism tests rerun five of those stages on every full suite run.
+
+Rounding to the nearest minute would not have been enough: the measured total sits at about 17.4
+minutes, six seconds under the boundary that would flip it to 18. So the README states the total
+rounded up to the enclosing five minutes, against the budget it is quoted next to, which is read
+out of build spec section 23 rather than typed. That number moves only when the cost of the
+pipeline genuinely moves. The exact per stage wall times stay in `docs/ENGINEERING_LOG.md`, which
+is hand written and gated by nothing, and the checklist points there.
+
+This is a deviation from the P10 brief, which asked for the seventeen minute figure in the README.
+The claim is the same claim; the precision is the part that was traded away, and it was traded for
+a gate that keeps working.
+
+### The prose outside the markers is checked for numbers, because the byte gate cannot see it
+
+A staleness gate proves that the injected blocks are current. It proves nothing at all about the
+sentence above them, and a reader cannot tell the two apart: both are text on a page. So
+`tests/test_readme_consistency.py` strips the marker pairs and the fenced code blocks and then
+refuses any digit carrying a unit, and any decimal with two or more places, in what remains. The
+allowlist is four version strings and nothing else, and widening it is the wrong way to make the
+test pass; moving the number into the block that owns it is the right way.
+
+Three consequences shaped the README. The repository layout tree lost its line counts. The phase
+history lost its table. And the five binding laws are quoted by reading their titles out of build
+spec section 0.2, rather than retyped, so a law reworded in the specification and not in the
+README is a failing test.
+
+### The README status table was removed rather than updated
+
+The README carried a phase table with a state column since P0. It is development scaffolding: it
+tells a reader what order the work happened in, which is the one thing a reader arriving at a
+release does not need, and it ages the moment the project ships. The phase history is in
+`docs/ENGINEERING_LOG.md`, which is where it belongs, and the README's document table points
+there in one line. `tests/test_readme_consistency.py::test_the_readme_has_no_phase_status_table`
+keeps it from coming back.
+
+### The README images are exports of the report's figures, not a second set
+
+The temptation at this point in a project is to draw prettier figures for the front page, and the
+result is a README that disagrees with the document it advertises.
+`scripts/make_readme_media.py` instead runs `report/figures_src/make_figures.py` unchanged with
+the raster preview hook of `ufem.plotting.style.save_figure` pointed at a scratch directory, then
+copies six selected PNGs into `docs/media/`. One change was needed in `style.py` for it: the
+preview resolution is now read from `UFEM_FIG_PNG_DPI`, defaulting to the 200 it always used, so
+the README images come out at 150 dpi without a second code path. Six images at that resolution
+total about 0.85 MB, an order of magnitude inside the file size gate.
+
+### `scripts/make_release.py` prepares a release and refuses to publish one
+
+The script builds the PDF, verifies the branch is `main`, verifies the tree is clean, verifies
+that the README, the data card and the model card all equal what regenerating them produces, runs
+both lints, and then prints the `gh release create` command. It does not run `gh`. Tagging and
+publishing are the only step in this project that rerunning a stage cannot undo, so they stay
+with a human, and there is deliberately no `--force` and no `--yes`: a check that failed is a
+release that is not ready.
+
 <!-- BEGIN RESOLVED VERSIONS -->
 
 ### Resolved version matrix, 2026-08-30
