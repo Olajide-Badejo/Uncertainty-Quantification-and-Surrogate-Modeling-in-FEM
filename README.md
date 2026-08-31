@@ -6,6 +6,19 @@ manifest or it does not get published.**
 
 ![UFEM Lab, the local dashboard over the artifact store](docs/media/ufem_lab.gif)
 
+*[UFEM Lab](#ufem-lab-the-local-dashboard) (`ufem lab`), recorded from the running dashboard:
+the calibrated prediction morphing under a strength sweep, the quantities of interest with
+their conformal intervals, a query driven into the censored corner until the model refuses to
+speak, one finite element run against the surrogate's prediction at the same inputs, and a
+limit state threshold recounting the propagated Monte Carlo sample. Every number on those
+panels was read from an artifact the pipeline wrote.*
+
+<!-- BEGIN INJECTED: toplinks -->
+
+**[Read the report (PDF)](https://github.com/Olajide-Badejo/Uncertainty-Quantification-and-Surrogate-Modeling-in-FEM/releases/download/v1.1.0/ufem-2.0-report-v1.1.0.pdf)** &nbsp;·&nbsp; [See the dashboard](#ufem-lab-the-local-dashboard) &nbsp;·&nbsp; [Results at a glance](#results-at-a-glance) &nbsp;·&nbsp; [Quick start](#quick-start) &nbsp;·&nbsp; [Build specification](docs/BUILD_SPEC.md)
+
+<!-- END INJECTED: toplinks -->
+
 <!-- BEGIN INJECTED: badges -->
 
 [![CI](https://img.shields.io/github/actions/workflow/status/Olajide-Badejo/Uncertainty-Quantification-and-Surrogate-Modeling-in-FEM/ci.yml?branch=main&label=CI)](https://github.com/Olajide-Badejo/Uncertainty-Quantification-and-Surrogate-Modeling-in-FEM/actions/workflows/ci.yml)
@@ -198,6 +211,30 @@ worth more than one that reports a ranking it cannot support.
 All six are exported by `scripts/make_readme_media.py` from the same figure functions the
 report compiles, so a figure here and the same figure in the PDF cannot disagree.
 
+## UFEM Lab, the local dashboard
+
+`ufem lab` serves the artifact store on `127.0.0.1` and computes nothing of its own. It is the
+fastest way to find out whether any of this is useful to you, and it is what the recording at
+the top of this page shows. Five panels:
+
+- **Predict.** Three sliders over the executed design. The calibrated curve, its simultaneous
+  band and every quantity of interest with its conformal interval repaint as you move them. A
+  query that lands in the censored corner is grayed out and told why, rather than answered.
+- **Dataset.** The design as it was executed, completed against failed, with the fitted
+  completion probability surface under it. Click a completed point and the finite element run
+  is drawn against the surrogate's prediction at the same three inputs.
+- **Sensitivity.** What the Q2 gate withheld, and why. It draws no Sobol bar, because there is
+  no index this campaign supports.
+- **Reliability.** The limit states with their failure probabilities, error bars and
+  conservative bounds, and a threshold slider that recounts the persisted Monte Carlo rows.
+- **Model card.** The provenance, the resolved stack, the validity domain and the known
+  failure modes, built from the same artifacts as [`docs/MODEL_CARD.md`](docs/MODEL_CARD.md),
+  so the document and the dashboard cannot disagree.
+
+The dashboard holds no computed constant, which is checked by parsing every module rather than
+by grepping it. See [Quick start](#quick-start) to run it, and
+[`scripts/capture_ui_gif.py`](scripts/capture_ui_gif.py) for how the recording was made.
+
 ## The five binding laws
 
 These are the specification compressed, and they are enforced by tests and linters rather than
@@ -297,7 +334,6 @@ UFEM_2.0/
 
 | Document | What it is for |
 |---|---|
-| [The report](https://github.com/Olajide-Badejo/Uncertainty-Quantification-and-Surrogate-Modeling-in-FEM/releases/latest) | The full write up, attached to the release as `main.pdf`. Method, verification, results, limitations, outlook. |
 | [`docs/DATA_CARD.md`](docs/DATA_CARD.md) | The campaign: design, extraction split, censoring bias tables, completion model, validity domain. Generated. |
 | [`docs/MODEL_CARD.md`](docs/MODEL_CARD.md) | The surrogate: scope, validity domain, out of sample table, calibration status, known failure modes. Generated. |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | The pipeline stage by stage and the artifact contract each one writes against. |
@@ -307,6 +343,28 @@ UFEM_2.0/
 | [`docs/ENGINEERING_LOG.md`](docs/ENGINEERING_LOG.md) | What actually happened, phase by phase, with the measurements. The project was built in gated phases and this is the record. |
 | [`docs/BUILD_SPEC.md`](docs/BUILD_SPEC.md) | The specification the whole thing was built against, including the autopsy of the predecessor. |
 | [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) | The definition of done, item by item, with the evidence for each. |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Every gate a change must pass, and the generator that owns each published document. |
+| [`data/quarantine/README.md`](data/quarantine/README.md) | What was deliberately not used, and why it is unusable as evidence. |
+| [`data/audit_reference/README.md`](data/audit_reference/README.md) | The golden values from the pre build audit that the ingest and audit stages are gated against. |
+| [`data/processed/README.md`](data/processed/README.md) | The committed pipeline outputs, so the repository reads without the raw campaign CSVs. |
+| [`v1_legacy/README.md`](v1_legacy/README.md) | The frozen predecessor tree, and the notice that its numbers are invalid. |
+| [`LICENSE`](LICENSE) | MIT. |
+
+### Off the repository
+
+<!-- BEGIN INJECTED: projectlinks -->
+
+| Where | What is there |
+|---|---|
+| [Report PDF, v1.1.0](https://github.com/Olajide-Badejo/Uncertainty-Quantification-and-Surrogate-Modeling-in-FEM/releases/download/v1.1.0/ufem-2.0-report-v1.1.0.pdf) | The compiled report, attached to the release. Direct download. |
+| [Release v1.1.0](https://github.com/Olajide-Badejo/Uncertainty-Quantification-and-Surrogate-Modeling-in-FEM/releases/tag/v1.1.0) | This overhaul, with its notes and its assets. |
+| [Release v1.0.0](https://github.com/Olajide-Badejo/Uncertainty-Quantification-and-Surrogate-Modeling-in-FEM/releases/tag/v1.0.0) | The frozen predecessor. Its published metrics are invalid; see Versioning below. |
+| [All releases](https://github.com/Olajide-Badejo/Uncertainty-Quantification-and-Surrogate-Modeling-in-FEM/releases) | Every tag, newest first. |
+| [CI runs](https://github.com/Olajide-Badejo/Uncertainty-Quantification-and-Surrogate-Modeling-in-FEM/actions/workflows/ci.yml) | Lint, fast tests on two operating systems, and the full editable install job. |
+| [Report build runs](https://github.com/Olajide-Badejo/Uncertainty-Quantification-and-Surrogate-Modeling-in-FEM/actions/workflows/report.yml) | The LaTeX build on a TeX Live container, with the PDF as a run artifact. |
+| [Issues](https://github.com/Olajide-Badejo/Uncertainty-Quantification-and-Surrogate-Modeling-in-FEM/issues) | Defect reports, in the shape of `docs/DEFECT_LOG.md`: evidence first. |
+
+<!-- END INJECTED: projectlinks -->
 
 ## Versioning
 
@@ -343,7 +401,7 @@ It is gated on solver access and none of it is claimed here.
 <!-- BEGIN INJECTED: gates -->
 
 A change lands only when the dash and banned identifier lint passes, no tracked file exceeds 5
-MB, `ruff check src tests scripts` is clean, and the suite of 559 test functions across 31
+MB, `ruff check src tests scripts` is clean, and the suite of 564 test functions across 31
 modules passes. Those are declarations rather than the cases pytest expands them into. All four
 gates run in CI on every push to `main` and to any `phase/**` branch, and on every pull request.
 

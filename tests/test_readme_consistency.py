@@ -29,6 +29,7 @@ import re
 import tomllib
 
 import pytest
+
 import readme_inject
 from readme_inject import (
     BLOCKS,
@@ -255,6 +256,90 @@ def test_every_media_image_the_readme_shows_is_committed(repo_root, committed):
 def test_every_repository_document_the_readme_links_is_present(repo_root, committed):
     for relative in sorted(set(re.findall(r"\]\((docs/[A-Z_]+\.md)\)", committed))):
         assert (repo_root / relative).is_file(), relative
+
+
+def test_every_relative_link_resolves_to_something_in_the_tree(repo_root, committed):
+    """A broken relative link is the cheapest kind of broken promise a README can make.
+
+    Wider than the check above on purpose: it catches a path that was moved, a directory
+    README that was never written, and a link typed against the working directory rather than
+    against the repository root, which is the way these break on GitHub.
+    """
+    targets = {
+        target
+        for target in re.findall(r"\]\(([^)\s]+)\)", committed)
+        if "://" not in target and not target.startswith("#")
+    }
+    assert targets, "the README links to nothing in its own tree"
+    missing = sorted(target for target in targets if not (repo_root / target).exists())
+    assert not missing, f"README links that do not resolve in the tree: {missing}"
+
+
+def _heading_anchors(text: str) -> set[str]:
+    """GitHub's heading slugs: lowercased, punctuation dropped, spaces to hyphens."""
+    anchors = set()
+    for heading in re.findall(r"^#{1,6}\s+(.*)$", text, flags=re.MULTILINE):
+        plain = re.sub(r"[`*_]", "", heading).strip().lower()
+        anchors.add(re.sub(r"[^a-z0-9 -]", "", plain).replace(" ", "-"))
+    return anchors
+
+
+def test_every_anchor_link_points_at_a_heading_that_exists(committed):
+    """An in page link to a section that was renamed is a link that silently does nothing."""
+    anchors = _heading_anchors(committed)
+    used = {target.lstrip("#") for target in re.findall(r"\]\((#[^)\s]+)\)", committed)}
+    assert used, "the README has no in page navigation at all"
+    missing = sorted(target for target in used if target not in anchors)
+    assert not missing, (
+        f"README anchors with no matching heading: {missing}. Known headings: {sorted(anchors)}"
+    )
+
+
+def test_the_first_screen_carries_the_links_a_reader_arrives_for(committed):
+    """The report, the dashboard and the specification, before anything has to be scrolled.
+
+    Measured as a character budget rather than as a line count, because the GIF and the badge
+    row are each one long line: everything above this offset renders inside the first screen.
+    """
+    first_screen = committed[: committed.index("## What this is")]
+    for needle in ("releases/download/", "#ufem-lab-the-local-dashboard", "docs/BUILD_SPEC.md"):
+        assert needle in first_screen, (
+            f"{needle!r} is not reachable from the first screen of the README"
+        )
+
+
+def test_the_readme_reaches_every_destination_a_reader_needs(committed):
+    """One click to each place the project actually lives, in an obvious spot."""
+    for needle, what in (
+        ("/actions/workflows/ci.yml", "the CI run history"),
+        ("/actions/workflows/report.yml", "the report build history"),
+        ("/releases", "the releases page"),
+        ("/releases/tag/v1.0.0", "the frozen predecessor release"),
+        ("/issues", "the issue tracker"),
+        ("(CONTRIBUTING.md)", "the contributing guide"),
+        ("(LICENSE)", "the license"),
+        ("(data/quarantine/README.md)", "the quarantine notice"),
+        ("(v1_legacy/README.md)", "the frozen predecessor tree"),
+        ("(docs/ARCHITECTURE.md)", "the architecture document"),
+    ):
+        assert needle in committed, f"the README does not link {what} ({needle})"
+
+
+def test_the_release_asset_link_is_the_file_the_release_script_uploads(repo_root, committed):
+    """The download link and the upload command cannot be two different filenames.
+
+    ``gh`` names an asset after the file on disk, so a README pointing at one name while the
+    release script attaches another is a permanent 404 that nobody notices until somebody
+    clicks it. Both come from :func:`make_release.report_asset_name`, and this is the assertion
+    that keeps them there.
+    """
+    import tomllib as toml
+
+    from make_release import report_asset_name
+
+    metadata = toml.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
+    version = str(metadata["project"]["version"]).split(".dev")[0]
+    assert f"/releases/download/v{version}/{report_asset_name(version)}" in committed
 
 
 def test_the_readme_shows_the_dashboard_gif_first(repo_root, committed):

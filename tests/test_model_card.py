@@ -16,6 +16,7 @@ from __future__ import annotations
 import re
 
 import pytest
+
 from make_model_card import MODEL_CARD, ArtifactMissing, generate
 
 
@@ -150,7 +151,6 @@ def test_the_card_and_the_dashboard_read_the_same_stages(repo_root):
     pytest.importorskip("torch")
     pytest.importorskip("nicegui")
     import make_model_card
-
     from ufem.ui.store import REQUIRED_STAGES as UI_STAGES
 
     card_stages = {stage for stage, _how in make_model_card.REQUIRED_STAGES}

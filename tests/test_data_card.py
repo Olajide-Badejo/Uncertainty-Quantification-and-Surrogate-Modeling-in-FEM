@@ -18,6 +18,7 @@ not the drift this gate exists to catch; changed numbers are.
 from __future__ import annotations
 
 import pytest
+
 from make_data_card import DATA_CARD, TABLES_DIR, ArtifactMissing, generate
 
 #: Every file the generator owns. A file added to the generator and not to this list would

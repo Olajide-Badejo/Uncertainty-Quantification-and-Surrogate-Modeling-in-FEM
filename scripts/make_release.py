@@ -15,6 +15,7 @@ Exit 0 means ready, and the last line is the command. Exit 1 names every check t
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -32,6 +33,21 @@ RELEASE_BRANCH = "main"
 #: What the release carries. The PDF is gitignored on purpose: it is a large binary no test can
 #: diff, so it ships as an asset built from the committed sources rather than as a tracked file.
 REPORT_PDF = Path("report") / "main.pdf"
+
+#: The filename the report is attached under. ``gh`` takes the asset name from the file on
+#: disk, and ``#`` only sets a display label, so a release built straight from ``main.pdf``
+#: would hand a reader a download called ``main.pdf`` and a permanent URL to match. The PDF is
+#: therefore staged under this name before the command is printed.
+#:
+#: ``scripts/readme_inject.py`` imports :func:`report_asset_name` to build the README's direct
+#: download link, so the link and the upload cannot drift into two different filenames. That is
+#: also what ``tests/test_readme_consistency.py`` asserts.
+RELEASE_ASSET_TEMPLATE = "ufem-2.0-report-v{version}.pdf"
+
+
+def report_asset_name(version: str) -> str:
+    """The filename the report PDF is published under for one release."""
+    return RELEASE_ASSET_TEMPLATE.format(version=version)
 
 
 class NotReady(RuntimeError):
@@ -175,11 +191,16 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     version = release_version(root)
     pdf = root / REPORT_PDF
-    print(f"\nready to release v{version}. The report is at {REPORT_PDF.as_posix()}, "
-          f"{pdf.stat().st_size / 1024 / 1024:.2f} MB.")
+    asset = REPORT_PDF.with_name(report_asset_name(version))
+    shutil.copyfile(pdf, root / asset)
+    print(
+        f"\nready to release v{version}. The report is staged at {asset.as_posix()}, "
+        f"{pdf.stat().st_size / 1024 / 1024:.2f} MB, which is the filename the README's "
+        "download link points at."
+    )
     print("\nRun this yourself; this script does not tag and does not publish:\n")
     print(
-        f'  gh release create v{version} "{REPORT_PDF.as_posix()}#UFEM 2.0 report" '
+        f'  gh release create v{version} "{asset.as_posix()}#UFEM 2.0 report" '
         f'--title "UFEM 2.0 v{version}" --notes-file docs/RELEASE_CHECKLIST.md'
     )
     return 0

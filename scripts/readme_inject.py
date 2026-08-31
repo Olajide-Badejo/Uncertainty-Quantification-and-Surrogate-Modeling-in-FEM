@@ -18,6 +18,8 @@ somebody types a second, staler number two paragraphs above it.
 The markers, and what each one is allowed to say:
 
 ``badges``       the shields row. Version and interpreter come from ``pyproject.toml``.
+``toplinks``     the handful of destinations that belong on the first screen.
+``projectlinks`` every GitHub destination, each of which carries a version or a workflow.
 ``scope``        what the pipeline was built from: the campaign, the split, the inputs.
 ``schematic``    the mermaid diagram, with its counts substituted from the artifacts.
 ``results``      the out of sample table: surrogate against the best baseline, per quantity.
@@ -55,6 +57,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from check_file_sizes import LIMIT_BYTES
+from make_release import report_asset_name
 from ufem.ablation_table import AblationMissing, verdict_summary
 from ufem.ablation_table import load_payloads as load_ablation_payloads
 from ufem.audit import CENSORING_JSON, VALIDITY_DOMAIN_JSON
@@ -418,6 +421,72 @@ def block_badges(data: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
+def block_toplinks(data: dict[str, Any]) -> str:
+    """The three or four destinations a reader wants before they have read anything.
+
+    On the first screen, above the fold, because a reader who has to scroll to find the report
+    does not find the report. The download link is version dependent, which is exactly why it
+    is injected rather than typed: it is built from the version in ``pyproject.toml`` and from
+    the filename ``scripts/make_release.py`` stages the PDF under, so the link and the upload
+    cannot become two different filenames.
+    """
+    version = data["project"]["release"]
+    asset = report_asset_name(version)
+    download = f"https://github.com/{GITHUB_SLUG}/releases/download/v{version}/{asset}"
+    return (
+        f"**[Read the report (PDF)]({download})** "
+        f"&nbsp;·&nbsp; [See the dashboard](#ufem-lab-the-local-dashboard) "
+        f"&nbsp;·&nbsp; [Results at a glance](#results-at-a-glance) "
+        f"&nbsp;·&nbsp; [Quick start](#quick-start) "
+        f"&nbsp;·&nbsp; [Build specification](docs/BUILD_SPEC.md)"
+    )
+
+
+def block_projectlinks(data: dict[str, Any]) -> str:
+    """Every destination that lives on GitHub rather than in the tree, as one table.
+
+    Same reason as the block above: each of these carries either a version or a workflow file
+    name, and a hand typed release URL is a link that rots at the next tag.
+    """
+    version = data["project"]["release"]
+    asset = report_asset_name(version)
+    base = f"https://github.com/{GITHUB_SLUG}"
+    rows = [
+        (
+            f"[Report PDF, v{version}]({base}/releases/download/v{version}/{asset})",
+            "The compiled report, attached to the release. Direct download.",
+        ),
+        (
+            f"[Release v{version}]({base}/releases/tag/v{version})",
+            "This overhaul, with its notes and its assets.",
+        ),
+        (
+            f"[Release v1.0.0]({base}/releases/tag/v1.0.0)",
+            "The frozen predecessor. Its published metrics are invalid; see Versioning below.",
+        ),
+        (
+            f"[All releases]({base}/releases)",
+            "Every tag, newest first.",
+        ),
+        (
+            f"[CI runs]({base}/actions/workflows/ci.yml)",
+            "Lint, fast tests on two operating systems, and the full editable install job.",
+        ),
+        (
+            f"[Report build runs]({base}/actions/workflows/report.yml)",
+            "The LaTeX build on a TeX Live container, with the PDF as a run artifact.",
+        ),
+        (
+            f"[Issues]({base}/issues)",
+            "Defect reports, in the shape of `docs/DEFECT_LOG.md`: evidence first.",
+        ),
+    ]
+    return "\n".join(
+        ["| Where | What is there |", "|---|---|"]
+        + [f"| {where} | {what} |" for where, what in rows]
+    )
+
+
 def block_scope(data: dict[str, Any]) -> str:
     censoring = data["censoring"]
     surrogate = data["surrogate"]
@@ -706,7 +775,9 @@ def block_gates(data: dict[str, Any]) -> str:
 #: convenience for reading this file; the splice is keyed by name.
 BLOCKS: dict[str, Callable[[dict[str, Any]], str]] = {
     "badges": block_badges,
+    "toplinks": block_toplinks,
     "scope": block_scope,
+    "projectlinks": block_projectlinks,
     "schematic": block_schematic,
     "results": block_results,
     "coverage": block_coverage,
