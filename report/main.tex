@@ -8,6 +8,9 @@
 \usepackage{amsmath}
 \usepackage{caption}
 \usepackage{xcolor}
+% Numeric citations, sorted and compressed, resolved by BibTeX from report/references.bib.
+% natbib is loaded before hyperref because hyperref patches what it finds already loaded.
+\usepackage[numbers,sort&compress]{natbib}
 \usepackage[colorlinks=true,linkcolor=blue!50!black,urlcolor=blue!50!black,citecolor=blue!50!black]{hyperref}
 \graphicspath{{figures/}}
 \captionsetup{font=small,labelfont=bf}
@@ -37,15 +40,15 @@ Every figure in this report is written by \texttt{report/figures\_src/make\_figu
 
 \section{The finite element model}
 \label{sec:model}
-The member is a two dimensional plane stress idealization: a $2000 \times 250$~mm concrete domain of thickness 150~mm, meshed with 637 four node reduced integration elements, with two embedded truss reinforcement layers (three 10~mm bars near the bottom face, three 12~mm bars near the top face, perfect bond). The member is supported by a pin at $x = 200$~mm on the top edge and a roller at $x = 1000$~mm on the bottom edge, and is loaded by a prescribed vertical displacement of 20~mm at the tip of the 800~mm overhang, i.e.\ displacement control throughout, which is why every converged run spans the full displacement range. Concrete is modeled with the damaged plasticity formulation (dilation angle $30^\circ$, eccentricity 0.1, $f_{b0}/f_{c0} = 1.16$, $K = 0.667$, viscosity parameter $8 \times 10^{-4}$); the hardening, stiffening, and damage tables are scaled per sample from the sampled strength. Steel is elastic plastic (500~MPa yield, 520~MPa at 1.5\,\% plastic strain).
+The member is a two dimensional plane stress idealization: a $2000 \times 250$~mm concrete domain of thickness 150~mm, meshed with 637 four node reduced integration elements, with two embedded truss reinforcement layers (three 10~mm bars near the bottom face, three 12~mm bars near the top face, perfect bond). The member is supported by a pin at $x = 200$~mm on the top edge and a roller at $x = 1000$~mm on the bottom edge, and is loaded by a prescribed vertical displacement of 20~mm at the tip of the 800~mm overhang, i.e.\ displacement control throughout, which is why every converged run spans the full displacement range. Concrete is modeled with the damaged plasticity formulation \cite{abaqus2025} (dilation angle $30^\circ$, eccentricity 0.1, $f_{b0}/f_{c0} = 1.16$, $K = 0.667$, viscosity parameter $8 \times 10^{-4}$); the hardening, stiffening, and damage tables are scaled per sample from the sampled strength. Steel is elastic plastic (500~MPa yield, 520~MPa at 1.5\,\% plastic strain).
 
-Four modeling defects are inherited by every result in this report, and they are named here rather than in a footnote because two of them are measured later in this document from two independent directions. The tension softening definition is not regularized by fracture energy while the strength varies between samples, which is a physically incoherent coupling: the softening table's shape is frozen while the material it describes changes, so the energy dissipated per unit crack area is whatever the mesh and the table happen to imply rather than a property of the concrete. No mesh convergence study was performed for the production mesh, despite the project's own written protocol requiring one, so there is no evidence that the localization the model produces is a property of the structure rather than of the discretization. The two embedded reinforcement layers are declared with solid sections on truss elements, which is a modeling error in the input deck rather than a simplification: a truss carries area, and a solid section on it is a declaration the solver reads in a way nobody checked. And the only damage quantity extracted from the analyses is the global maximum compressive damage over the whole model, a single scalar per increment that says how damaged the worst point is and nothing about where or over how much material, which is why the damage response of Section~\ref{sec:stats} is a coarse quantity and why its terminal value carries no information at all.
+Four modeling defects are inherited by every result in this report, and they are named here rather than in a footnote because two of them are measured later in this document from two independent directions. The tension softening definition is not regularized by fracture energy while the strength varies between samples, which is a physically incoherent coupling: the softening table's shape is frozen while the material it describes changes, so the energy dissipated per unit crack area is whatever the mesh and the table happen to imply rather than a property of the concrete. Crack band theory \cite{bazant1983} is the reason that matters, and the fracture energy the fib Model Code makes a function of the concrete strength \cite{fib2010} is the quantity the softening branch should have been declared against. No mesh convergence study was performed for the production mesh, despite the project's own written protocol requiring one, so there is no evidence that the localization the model produces is a property of the structure rather than of the discretization. The two embedded reinforcement layers are declared with solid sections on truss elements, which is a modeling error in the input deck rather than a simplification: a truss carries area, and a solid section on it is a declaration the solver reads in a way nobody checked. And the only damage quantity extracted from the analyses is the global maximum compressive damage over the whole model, a single scalar per increment that says how damaged the worst point is and nothing about where or over how much material, which is why the damage response of Section~\ref{sec:stats} is a coarse quantity and why its terminal value carries no information at all.
 
 The first two of those are the reason Section~\ref{sec:sensdiagnosis} finds the response too rough for any smooth metamodel to certify against and Section~\ref{sec:analytic} finds a strength elasticity an order of magnitude above what the reinforcement mechanism implies. Both diagnoses were predicted from this paragraph before either was measured, and the correction of all four is the first item of the outlook in Section~\ref{sec:outlook}.
 
 \section{Probabilistic model and design}
 \label{sec:design}
-The design varies three independent random variables by Latin hypercube sampling: the mean concrete compressive strength $f_{cm}$, the bottom cover $c_{\mathrm{bot}}$, and the top cover $c_{\mathrm{top}}$. Their declared marginals and the moments the executed design realized are given in Table~\ref{tab:design}. The declarations are read from the single configuration file that is permitted to contain a distribution in this project; no stage redeclares one.
+The design varies three independent random variables by Latin hypercube sampling: the mean concrete compressive strength $f_{cm}$, the bottom cover $c_{\mathrm{bot}}$, and the top cover $c_{\mathrm{top}}$. Their declared marginals and the moments the executed design realized are given in Table~\ref{tab:design}; the lognormal on the concrete strength is the resistance model of the JCSS probabilistic model code \cite{jcss}, and the two cover marginals are execution tolerances. The declarations are read from the single configuration file that is permitted to contain a distribution in this project; no stage redeclares one.
 
 \begin{table}[tbp]
 \centering
@@ -54,7 +57,7 @@ The design varies three independent random variables by Latin hypercube sampling
 \input{tables/design_moments.tex}
 \end{table}
 
-The elastic modulus was generated as the Eurocode~2 expression $E = 22000\,(f_{cm}/10)^{0.3}$~MPa. The audit verified that this relation holds exactly in the design data: the rank correlation between $f_{cm}$ and $E$ is one to within floating point (Figure~\ref{fig:collinearity}). The campaign therefore has three independent inputs, not four. Any regression or sensitivity analysis that treats $E$ as a fourth free input is ill posed: variance based indices split the shared effect arbitrarily between two copies of the same random variable. All analyses in this report, and the surrogate specified for the next phase, use the feature vector $(f_{cm}, c_{\mathrm{bot}}, c_{\mathrm{top}})$ only, and the pipeline enforces that in code rather than by convention.
+The elastic modulus was generated as the Eurocode~2 secant modulus expression \cite{ec2}, $E = 22000\,(f_{cm}/10)^{0.3}$~MPa. The audit verified that this relation holds exactly in the design data: the rank correlation between $f_{cm}$ and $E$ is one to within floating point (Figure~\ref{fig:collinearity}). The campaign therefore has three independent inputs, not four. Any regression or sensitivity analysis that treats $E$ as a fourth free input is ill posed: variance based indices split the shared effect arbitrarily between two copies of the same random variable. All analyses in this report, and the surrogate specified for the next phase, use the feature vector $(f_{cm}, c_{\mathrm{bot}}, c_{\mathrm{top}})$ only, and the pipeline enforces that in code rather than by convention.
 
 \begin{figure}[tbp]
 \centering
@@ -95,7 +98,7 @@ The failures cluster in the input space (Figure~\ref{fig:censoring}). Failed sam
 
 \subsection{A model of the censoring}
 \label{sec:completion}
-Documenting the bias is not enough, because every downstream product needs to know, pointwise, whether it is being asked to predict somewhere the solver could actually reach. The pipeline therefore fits a completion probability model $P(\text{complete} \mid f_{cm}, c_{\mathrm{bot}}, c_{\mathrm{top}})$ over all \NDesign{} design rows. The estimator is a \CompletionModel{} classifier with a Mat\'ern kernel on standardized features; a regularized logistic regression is available as a pre authorized fallback, and the pipeline records which one shipped and why. Figure~\ref{fig:surface} shows the fitted surface in two dimensional slices, each taken with the third input at its median over the design.
+Documenting the bias is not enough, because every downstream product needs to know, pointwise, whether it is being asked to predict somewhere the solver could actually reach. The pipeline therefore fits a completion probability model $P(\text{complete} \mid f_{cm}, c_{\mathrm{bot}}, c_{\mathrm{top}})$ over all \NDesign{} design rows. The estimator is a \CompletionModel{} classifier with a Mat\'ern kernel on standardized features, fitted with scikit-learn \cite{sklearn}; a regularized logistic regression is available as a pre authorized fallback, and the pipeline records which one shipped and why. Figure~\ref{fig:surface} shows the fitted surface in two dimensional slices, each taken with the third input at its median over the design.
 
 \begin{figure}[tbp]
 \centering
@@ -176,7 +179,7 @@ The saturation of the terminal damage is the second structural finding of the au
 \section{Input to output relations}
 Figure~\ref{fig:peakvsinputs} shows the peak load against each independent input. Concrete strength dominates, the top cover contributes a secondary positive effect, and the bottom cover a weak negative one. The initial stiffness tells a different story (Figure~\ref{fig:stiffness}): it is governed primarily by the top cover, with strength contributing only weakly through the modulus. Stronger concrete both raises the peak and delays damage accumulation.
 
-These monotone, smooth, moderately interacting relations over three inputs are exactly the regime in which Gaussian process surrogates on a reduced curve representation are expected to perform well, and in which a linear baseline already explains a substantial fraction of the peak load variance. The build specification therefore requires any surrogate to demonstrate out of sample superiority over that baseline rather than to assume it.
+These monotone, smooth, moderately interacting relations over three inputs are exactly the regime in which Gaussian process surrogates on a reduced curve representation are expected to perform well \cite{marrel2024}, and in which a linear baseline already explains a substantial fraction of the peak load variance. Sample size is the other half of that argument: \NValid{} surviving runs over three inputs sit comfortably above the runs per input that the computer experiment literature treats as a working minimum for a kernel metamodel \cite{loeppky2009}, which is what makes a Gaussian process the reasonable default here rather than an aspiration. The build specification therefore requires any surrogate to demonstrate out of sample superiority over that baseline rather than to assume it.
 
 \begin{figure}[tbp]
 \centering
@@ -199,9 +202,9 @@ The audit fixes five requirements for the surrogate phase. First, the common dis
 \label{sec:registration}
 The audit established that these curves vary in phase as well as in amplitude: the displacement at peak ranges over more than a factor of two across the family. That fact governs how the curves may be reduced to a small number of coordinates, which is the step every surrogate in this project is built on.
 
-Principal component analysis is a linear method, and a linear basis cannot represent a shift. Asked to describe a family whose features sit at different abscissae, it approximates the shift by superposing fixed shapes, which costs components that carry no mechanical meaning and, worse, smears the peak of any truncated reconstruction: averaging curves whose maxima are not aligned produces a mean that is flatter and lower than any individual curve. For a structural surrogate that is the least acceptable artifact available, because the peak load is the quantity the reliability analysis of a later phase thresholds. The remedy is to separate the two kinds of variation before reducing either, so that amplitude and phase each get a basis suited to it.
+Principal component analysis is a linear method, and a linear basis cannot represent a shift. Asked to describe a family whose features sit at different abscissae, it approximates the shift by superposing fixed shapes, which costs components that carry no mechanical meaning and, worse, smears the peak of any truncated reconstruction: averaging curves whose maxima are not aligned produces a mean that is flatter and lower than any individual curve, which is the amplitude and phase confounding that functional data analysis exists to separate \cite{marron2015}. For a structural surrogate that is the least acceptable artifact available, because the peak load is the quantity the reliability analysis of a later phase thresholds. The remedy is to separate the two kinds of variation before reducing either, so that amplitude and phase each get a basis suited to it.
 
-This pipeline does that with the square root slope framework. Each curve is first reparameterized by arc length in a normalized load displacement plane, using the fixed global normalizers $P_0 = 40$~kN and $u_0 = 20$~mm read from the configuration rather than per curve values; normalizing each curve by its own peak would make every curve reach unity and destroy exactly the amplitude information the surrogate exists to predict. The family is then registered elastically, which yields a set of aligned amplitude functions and a set of warping functions $\gamma$ carrying the phase. The warps are mapped through $\psi = \sqrt{\dot{\gamma}}$ to the tangent space at their Karcher mean, because the warps themselves are monotone functions pinned at both ends and so do not form a vector space: a principal component of raw $\gamma$ would in general not be a warp at all. Every one of the \NValid{} warps produced here is monotone with $\gamma(0) = 0$ and $\gamma(1) = 1$ to within $10^{-8}$, which is the gate this phase is required to pass.
+This pipeline does that with the square root slope framework \cite{tucker2013,srivastava2016}, through the fdasrsf package \cite{fdasrsf}. Each curve is first reparameterized by arc length in a normalized load displacement plane, using the fixed global normalizers $P_0 = 40$~kN and $u_0 = 20$~mm read from the configuration rather than per curve values; normalizing each curve by its own peak would make every curve reach unity and destroy exactly the amplitude information the surrogate exists to predict. The family is then registered elastically, which yields a set of aligned amplitude functions and a set of warping functions $\gamma$ carrying the phase. The warps are mapped through $\psi = \sqrt{\dot{\gamma}}$ to the tangent space at their Karcher mean, because the warps themselves are monotone functions pinned at both ends and so do not form a vector space: a principal component of raw $\gamma$ would in general not be a warp at all. Every one of the \NValid{} warps produced here is monotone with $\gamma(0) = 0$ and $\gamma(1) = 1$ to within $10^{-8}$, which is the gate this phase is required to pass.
 
 Figure~\ref{fig:registration} shows the family before and after registration and Figure~\ref{fig:warps} the warping functions themselves. Three separate reductions follow, summarized in Table~\ref{tab:reduction}: one on the registered amplitude, one on the phase, and one on the damage curves, which are deliberately left unregistered because they are monotone saturating curves that all terminate at the same material table cap, so they carry no phase variation worth separating. Components are retained to \VarianceTarget\,\% of variance in each block. The registered amplitude needs \ComponentsAmplitude{}, with the first component alone carrying \AmplitudePCOne\,\% of the variance; its leading loadings are shown in Figure~\ref{fig:loadings}. The phase block needs \ComponentsPhase{} and the damage block \ComponentsDamage{}, and both of those numbers are larger than the build specification anticipated. The damage family in particular was expected to be describable in about two components; it reaches \VarianceDamage\,\% only at \ComponentsDamage{}, because a long tail of small modes follows a strong leading pair. These are reported as measured rather than adjusted.
 
@@ -264,7 +267,7 @@ in the same harness, never a friendlier one.
 
 \subsection{One Gaussian process per score and per scalar}
 One exact Gaussian process is fitted per retained reduction score and per scalar quantity of
-interest, GPyTorch on CPU in float64: a constant mean, a Mat\'ern 5/2 kernel with automatic
+interest, GPyTorch \cite{gpytorch} on CPU in float64: a constant mean, a Mat\'ern 5/2 kernel with automatic
 relevance determination over the three standardized inputs, and a homoscedastic noise fitted
 under a LogNormal hyperprior rather than a hard floor, for the reason ground rule 4 exists:
 a fitted floor at the solver's numerical resolution reproduced the interpolate the scatter
@@ -306,8 +309,8 @@ the same cross validation harness, or to report the loss rather than the tuned i
 the training mean curve, ordinary least squares on the three standardized inputs, the full
 quadratic polynomial chaos expansion, and a three nearest neighbour inverse distance average.
 None of the four has a hyperparameter fitted on this data. Scalars are compared by closed form
-leave one out over all \NValid{} runs (Dubrule 1983; Rasmussen and Williams
-section~5.4.2), which reuses the hyperparameters fitted on all runs and states that
+leave one out over all \NValid{} runs (Dubrule \cite{dubrule1983}; Rasmussen and Williams
+\cite{rasmussen2006}, section~5.4.2), which reuses the hyperparameters fitted on all runs and states that
 approximation rather than hiding it; curves are compared by \ValidationFolds{} grouped folds,
 because a curve level leave one out would refit the registration and every principal
 component basis 198 times, an arithmetic cost of about 42 minutes this project chose not to
@@ -390,7 +393,11 @@ study on the same 198 runs.}
 \subsection{Autoencoder plus Gaussian process}
 The predecessor project's second architecture, rebuilt without its defects: group aware folds,
 the production kernel with its fitted noise on the latent codes, the three input feature
-contract, and everything refitted inside the fold. The force autoencoder carries
+contract, and everything refitted inside the fold. Learning the representation and the kernel
+on the same small sample is the setting in which a deep kernel is known to overfit its marginal
+likelihood and lose the calibration a Gaussian process was chosen for \cite{ober2021}, which is
+why this path enters the report as an ablation with the encoder fitted separately rather than as
+the shipped surrogate. The force autoencoder carries
 \AblationTwoForceLatent{} latent coordinates, between the \SurrogateComponentsAmplitude{}
 amplitude components the production basis retains and the score quantities it predicts to rebuild
 one curve, so the comparison is not a budget handicap; the damage autoencoder carries
@@ -415,7 +422,12 @@ and reporting both is the answer to it.
 \subsection{Five member deep ensemble}
 Five seeded multilayer perceptrons mapping the three standardized inputs straight to the 201 point
 curve, each with a Gaussian negative log likelihood head, combined as the mixture whose variance
-is the mean member variance plus the variance of the member means. \AblationThreeClaimsHeld{} of
+is the mean member variance plus the variance of the member means. A learned operator is the
+obvious modern alternative to a reduced basis and a kernel, and how the two families compare in
+data efficiency at small sample size is an open comparison in the literature
+\cite{westermann2026}. This project declines to settle it by assertion, which is why the network
+family appears here as a measured ablation on this campaign rather than as the shipped model or
+as an exclusion asserted in a sentence. \AblationThreeClaimsHeld{} of
 the four claims held, and the split is the interesting part. The ensemble beats the production
 pipeline on both error metrics, \AblationThreeRMSE~N against \AblationThreeProductionRMSE~N
 pointwise and \AblationThreeForceLTwo\,\% against \CurveLTwoGP\,\% per curve, and loses on both
@@ -503,8 +515,9 @@ why the correction factor can be reported honestly instead of being tuned.
 
 \subsection{Scalars: jackknife+ with sigma normalized scores}
 Each scalar quantity of interest gets nonconformity scores
-$R_i = |y_i - \mu_{-i}(x_i)| / \sigma_{-i}(x_i)$ built from the closed form leave one out, and a
-jackknife+ interval at $\alpha \in \{0.1, 0.05\}$. The interval at a query point is a quantile
+$R_i = |y_i - \mu_{-i}(x_i)| / \sigma_{-i}(x_i)$ built from the closed form leave one out, which
+is the sigma normalized score a conformal wrapper around a Gaussian process is built on
+\cite{jaber2025}, and a jackknife+ interval \cite{barber2021} at $\alpha \in \{0.1, 0.05\}$. The interval at a query point is a quantile
 over the whole ensemble of leave one out models evaluated \emph{there}, not a residual quantile
 around one prediction, and the same block inverse identity that gives Dubrule's leave one out
 diagonal gives that ensemble from the one Cholesky already computed.
@@ -547,7 +560,8 @@ posterior predictive standard deviation of the curve, truncation residual includ
 $\lceil (n+1)(1-\alpha) \rceil$th order statistic of those scores scales the band, and coverage
 is then simultaneous by construction of the supremum. This modulated functional band on finite
 element softening curves is the second increment this project claims, and it is claimed
-modestly: the construction is that of Diquigiovanni, Fontana and Vantini, and what is new here
+modestly: the construction is that of Diquigiovanni, Fontana and Vantini
+\cite{diquigiovanni2021,diquigiovanni2022}, and what is new here
 is the modulation coming from a Gaussian process posterior over a registered functional
 representation rather than from a residual envelope.
 
@@ -563,7 +577,11 @@ to avoid, and the damage saturation showing up as a degenerate domain is a findi
 data rather than a numerical inconvenience.
 
 \subsection{What the recalibration measured}
-Table~\ref{tab:conformaldiagnostics} carries the paired before and after of build spec 11.4. For
+Table~\ref{tab:conformaldiagnostics} carries the paired before and after of build spec 11.4, on
+the diagnostic set that calibrated regression and conformal wrapped simulation surrogates are
+both checked with: an empirical against nominal coverage sweep, a probability integral
+transform, and proper scores, all measured out of fold
+\cite{kuleshov2018,gopakumar2026}. For
 the scalars the answer is a null result, and the interesting kind: the \ScalarScalingCount{}
 scaling factors run from \ScalarScalingMin{} to \ScalarScalingMax{}, nine of them within one
 percent of unity, so the Gaussian process noise fit was already telling the truth about its own
@@ -666,7 +684,8 @@ independently and there is no independent resample of two columns that are the s
 variable. That is not a caveat about precision. It is the difference between a number and a
 number shaped object, and it is the whole reason the standard machinery can be used at all.
 
-The primary construction is a sparse polynomial chaos expansion, for two reasons that both
+The primary construction is a sparse polynomial chaos expansion
+\cite{blatman2011,luethen2021}, for two reasons that both
 matter at \NValid{} points. The first is that its Sobol indices are not estimated. Expanding a
 response on a basis that is orthonormal under the input distribution makes the response
 variance the sum of the squared non constant coefficients, and the partial variance of any
@@ -677,7 +696,8 @@ terms against \NValid{} points, so an ordinary least squares fit would be a rich
 with nothing left over to check it with. Hyperbolic truncation at $q = \SensHyperbolicQ$ cuts
 the candidate set to \SensCandidateTerms{} by penalizing high order interactions more than high
 order main effects, which is the right prior for a mechanical response, and least angle
-regression then selects a subset of those under a corrected leave one out criterion.
+regression then selects a subset of those under a corrected leave one out criterion, in
+OpenTURNS \cite{openturns}.
 
 The cross check draws Sobol indices from the Gaussian process posteriors instead, and the point
 of it is not a second opinion but an uncertainty. A polynomial chaos index is a single number
@@ -695,7 +715,7 @@ runs, and where they disagree the disagreement is the finding.
 A Sobol index computed from a metamodel is a statement about the metamodel, and it inherits
 whatever the metamodel got wrong. Build specification 12.1 therefore ties publication to the
 corrected leave one out $Q^2$ of each expansion, on the thresholds of the Blatman and Sudret
-line of work: at or above \SensQTwoValues{} the index values are published; between
+line of work \cite{blatman2011}: at or above \SensQTwoValues{} the index values are published; between
 \SensQTwoRankings{} and \SensQTwoValues{} only the ordering is, with the values carried as
 indicative; below \SensQTwoRankings{} nothing derived from that expansion is published. The
 thresholds were written into \texttt{src/ufem/sensitivity.py} before the first expansion was
@@ -841,7 +861,7 @@ measurable from these 198 runs.
 One presentational point, because it is the sort of thing that quietly inflates confidence
 elsewhere. The whiskers in Figure~\ref{fig:sobolagreement} are the surrogate's uncertainty about
 the index, taken across the \SensRealizations{} posterior realizations. They are not the
-confidence intervals SALib reports, which cover the Monte Carlo error of one Saltelli estimate
+confidence intervals SALib \cite{salib} reports, which cover the Monte Carlo error of one Saltelli estimate
 on the \SensDesignRows{} point design and run between a fifth and a third of the posterior
 width here. Reporting the second in place of the first is how a sensitivity analysis comes to
 look far more certain than it is.
@@ -873,8 +893,9 @@ gate withholds.}
 
 \subsection{Along the curve}
 \label{sec:functional}
-The pointwise indices of Figure~\ref{fig:functional} are computed on the \emph{registered}
-amplitude functions, and that is not a technicality. At a fixed physical displacement near the
+The pointwise indices of Figure~\ref{fig:functional} are the variance based sensitivity analysis
+of a parameter indexed process \cite{alexanderian2020}, computed on the \emph{registered}
+amplitude functions, and that registration is not a technicality. At a fixed physical displacement near the
 peak, the dominant source of variation across runs is whether a given run has reached its peak
 yet, so an index computed there on unregistered curves would report which input moves the peak
 location rather than which input sets the load. Registration separates the two before the
@@ -887,7 +908,7 @@ applying the principal component loadings to those coefficients gives the chaos 
 the field at every station, whose variance decomposition follows from orthonormality of the
 chaos basis. Because the loadings are orthonormal too, summing the pointwise partial variance
 over the stations is exactly the eigenvalue weighted generalized index of Lamboni, Monod and
-Makowski, so Table~\ref{tab:sensaggregated} and Figure~\ref{fig:functional} are two views of
+Makowski \cite{lamboni2011}, so Table~\ref{tab:sensaggregated} and Figure~\ref{fig:functional} are two views of
 one decomposition rather than two calculations that happen to sit near each other. A test
 asserts that identity rather than trusting the derivation.
 
@@ -1319,6 +1340,15 @@ based softening definition to exhibit the non convergence being avoided. That pa
 most useful figure the follow up campaign can produce, because it shows the reader the failure
 mode this report inherited rather than describing it.
 
+\textbf{Then a benchmark the corrected card has to reproduce before it is believed.} Build
+specification 14.5 gates the corrected material generator on one external reproduction, the
+modern re execution of the Bresler Scordelis beams with measured post peak response
+\cite{vecchio2004}, run with the same generator and scored against the published measurements
+on peak load, deflection at peak, absorbed energy and failure mode. The failure mode is part of
+the gate and not a remark on it: a card that reaches the right load through the wrong mechanism
+is exactly the defect Section~\ref{sec:analytic} measured in the inherited campaign, and a
+tolerance on the load alone would pass it again.
+
 \textbf{Then the \NMissing{} missing runs.} Rerunning the censored corner under the corrected
 setup attacks the bias directly, and it is the only thing that does. The completion model is
 refit after every batch and the validity domain regenerated, so the effect on the domain is
@@ -1326,14 +1356,19 @@ measured rather than assumed.
 
 \textbf{Then the fourth input.} Promoting the strength to stiffness model error to an
 independent lognormal multiplier on the Eurocode~2 expression dissolves the collinearity of
-Section~\ref{sec:design} by reparameterization instead of by Shapley machinery, and it makes the
+Section~\ref{sec:design} by reparameterization instead of by the Shapley machinery that
+dependent inputs would otherwise force \cite{iooss2019}, and it makes the
 scatter that the inherited campaign suppressed into a measurable sensitivity. It costs one extra
 sampled dimension, which at three inputs is affordable and at six would not be.
 
 \textbf{Then active learning where the reliability answer is thin.} With a corrected and
-uncensored design in place, 30 to 50 enrichment points chosen by a $U$ learning function over a
+uncensored design in place, 30 to 50 enrichment points chosen by a $U$ learning function
+\cite{echard2011} over a
 kriging surrogate, in batches, targeting the peak load limit state, is what moves the resolvable
-failure probability below the $\PfFloor$ floor of Section~\ref{sec:floor}. Doing it before the
+failure probability below the $\PfFloor$ floor of Section~\ref{sec:floor}. The learning function
+and the stopping rule are taken from the active learning reliability benchmark
+\cite{moustapha2022} rather than chosen here, because a method picked for a single limit state
+is a method fitted to it. Doing it before the
 physics is corrected would spend solver time refining the answer to the wrong question.
 
 Two things do not need the solver and are worth stating as the smaller half of the outlook. The
@@ -1368,5 +1403,12 @@ answering a different question from the beam. Correcting that is the first item 
 Section~\ref{sec:outlook} and it needs the solver, not more statistics.
 
 Every number in this report is regenerated by the pipeline from the raw extracted data and reaches this page through a generated file. Nothing in it was typed.
+
+% The reference list of build specification section 25, resolved by BibTeX from
+% report/references.bib. Two entries there carry a note saying their author list and title
+% are abbreviated as the literature survey recorded them, because writing out a record I
+% cannot verify is the fabrication ground rule 1 bans.
+\bibliographystyle{plainnat}
+\bibliography{references}
 
 \end{document}
