@@ -1170,7 +1170,7 @@ outlook says so rather than the conclusion quietly not mentioning it.
 ## 2026-08-31, Phase P10: final QA, the README, and the release
 
 **What shipped.** `scripts/readme_inject.py`, which injects every numeric claim in `README.md`
-from the artifact manifests into eleven named marker pairs; `scripts/make_readme_media.py`,
+from the artifact manifests into twelve named marker pairs; `scripts/make_readme_media.py`,
 which exports six result images from the report's own figure functions;
 `tests/test_readme_consistency.py`, the staleness gate and the ban on numbers outside the
 markers; `scripts/make_release.py`, which prepares a release and refuses to publish one;
@@ -1186,11 +1186,11 @@ because it is the build order, which is the one thing a reader arriving at a rel
 need, and because a document that says "P10: not started" is a document that is wrong the moment
 it ships. The phase history is in this file and the README points here in one line.
 
-**Eleven marker pairs, not one.** Phase P0 left a single `BEGIN INJECTED RESULTS` pair at the top
+**Twelve marker pairs, not one.** Phase P0 left a single `BEGIN INJECTED RESULTS` pair at the top
 of the README as a placeholder, and the obvious move at P10 was to fill it. That would have put
 every number in the document into one slab under the introduction, which is the shape of a
 generated page rather than of a page somebody reads. A reader wants the reliability sentence
-under the reliability heading. So the injector owns eleven named regions (`badges`, `scope`,
+under the reliability heading. So the injector owns twelve named regions (`badges`, `scope`,
 `schematic`, `results`, `coverage`, `reliability`, `evidence`, `caveats`, `laws`, `quickstart`,
 `versioning`, `gates`) and splices each one where it belongs; a stale block is now a stale block
 with a name.

@@ -1237,9 +1237,9 @@ its `.dev` suffix, which is the only place the choice is enforced mechanically.
 ### The README's numbers are injected into named marker pairs, not one block
 
 P0 left a single `BEGIN INJECTED RESULTS` pair in the README as a placeholder. P10 replaced it
-with eleven named pairs (`badges`, `scope`, `schematic`, `results`, `coverage`, `reliability`,
-`caveats`, `laws`, `quickstart`, `versioning`, `gates`), each owned by one builder function in
-`scripts/readme_inject.py`. One block would have forced every number in the document into a
+with twelve named pairs (`badges`, `scope`, `schematic`, `results`, `coverage`, `reliability`,
+`evidence`, `caveats`, `laws`, `quickstart`, `versioning`, `gates`), each owned by one builder
+function in `scripts/readme_inject.py`. One block would have forced every number into a
 single slab at the top, which is the shape of a generated page rather than of a page somebody
 reads: a reader wants the reliability sentence under the reliability heading. Named pairs also
 make the failure mode legible, because a stale block is now a stale block with a name.
