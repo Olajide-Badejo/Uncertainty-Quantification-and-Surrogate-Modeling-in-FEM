@@ -1394,3 +1394,58 @@ not have is Track B: the corrected Abaqus campaign of build spec section 14 is g
 access and none of it is claimed here. Everything in this repository is conditional on an
 inherited campaign whose material card was frozen, and the report's outlook says what would
 change if it were not.
+
+## 2026-08-31, the report had no references
+
+Reviewing the released PDF I found the thing a reader would notice first and I had not: the
+report cites nothing. Build spec section 25 has carried the verified reference list since the
+literature survey of 2026-08-28, and the prose already named half of those works in plain text,
+"the construction is that of Diquigiovanni, Fontana and Vantini", "(Dubrule 1983; Rasmussen and
+Williams section 5.4.2)", "the thresholds of the Blatman and Sudret line of work", with nothing
+for a reader to follow. That is worse than an incomplete bibliography, because it reads as
+attribution while providing none.
+
+**What was added.** `report/references.bib` with **33 entries**, every work of build spec section
+25 plus the five pieces of software the pipeline actually runs on, and **31 `\cite` commands**
+placed in `main.tex` where the text already made the claim. Nothing was cited into a paragraph
+that did not use the work: the FEM section cites the crack band paper, the fib Model Code, EN
+1992-1-1 and the Abaqus documentation because it describes a card built from them; the
+registration section cites the square root slope framework it is built on; the two paragraph whys
+for the surrogate cite the sample sizing and the review that justify the choice; the ablations
+cite the deep kernel and neural operator literature that says why those families are measured
+rather than shipped; calibration cites the jackknife+, the sigma normalized score, the functional
+band and the two calibration diagnostic papers; sensitivity cites the sparse chaos line of work,
+the generalized index, the time indexed decomposition and the Shapley route the reparameterization
+avoided; reliability cites the U learning function and the active learning benchmark. Every entry
+is cited at least once and every citation resolves: 33 keys in the file, 33 keys in `main.aux`,
+zero on either side of that comparison without a partner.
+
+**Eight new sentences and ten in place clauses came with it**, because a citation with no claim
+attached to it is decoration. The largest is a new outlook item: the corrected material card has
+to reproduce the Vecchio and Shim benchmark before it is believed, which build spec 14.5 requires
+and the outlook had simply omitted. The rest say why a work is being pointed at. Nothing new
+states a measured number, so no table fragment and no staleness gate is touched by any of it.
+
+**Style.** natbib in numeric mode with `plainnat`, sorted and compressed. No page range appears
+anywhere in the bibliography, which is the ground rule 3 decision recorded in
+`docs/DESIGN_DECISIONS.md` today: BibTeX would typeset one as the two hyphen sequence the ground
+rule bans, `scripts/dash_lint.py` does not look for that sequence at all, and giving BibTeX no
+pages to join keeps the rule without inventing a lint exemption for it. No DOI is written
+anywhere either, for the ground rule 1 reason recorded in the same entry.
+
+**Gates.** `latexmk -pdf -bibtex -halt-on-error -interaction=nonstopmode -file-line-error`,
+which is exactly the argument set `report.yml` now passes, converges in four passes and writes
+`main.pdf` at **41 pages**, up from 38. `grep -c Citation main.log` returns **0**, so no citation
+is undefined and none is multiply defined. The log carries zero LaTeX warnings and zero package
+warnings; `main.blg` reports `warning$ -- 0` over 33 entries. The one underfull hbox in the log
+is in `tables/importance_weighting.tex`, is about a wrapped column heading, and predates this
+change. **486 pass** under `not slow and not fullstack`, the light stack CI selection, with none
+deselected for this reason and none new. `ruff check src tests scripts`, `scripts/dash_lint.py`
+and `scripts/check_file_sizes.py` are clean.
+
+**`report.yml` needed one change and not the one I expected.** latexmk already ran BibTeX, on its
+default of running it whenever a `.bib` file turns up, so the workflow would have worked
+untouched. I added `-bibtex` to the argument list anyway, because a build that depends on an
+undocumented default is a build that breaks quietly the day the container image changes. The
+`.bbl` stays gitignored and stays uncommitted: the TeX Live full image runs BibTeX, and
+`references.bib` is committed for the same reason the table fragments and the figures are.

@@ -1,0 +1,348 @@
+% Bibliography for report/main.tex.
+%
+% Every entry here is one of the works of build specification section 25, which is the
+% reference list the August 2026 literature survey assembled and verified. Ground rule 1
+% forbids inventing a citation, so nothing is added to that list and nothing in it is
+% embellished: the journal, volume, issue and year of each entry are the ones the
+% specification records, and an identifier appears only where the specification gives it
+% (the arXiv ids) or where it is a fact about the work rather than a lookup. No DOI is
+% written here, because a DOI recalled rather than resolved is exactly the kind of
+% unverifiable detail ground rule 1 bans, and an arXiv id or a journal, volume and year
+% locate the work anyway.
+%
+% No page ranges anywhere, deliberately. BibTeX joins a first and last page with the two
+% hyphen sequence that TeX turns into an en dash, and ground rule 3 bans that sequence from
+% the report, so this file never gives BibTeX a pair of pages to join. Works are located
+% by volume, issue and year, and by article number where the journal uses one, which is
+% enough to find any of them. See docs/DESIGN_DECISIONS.md, 2026-08-31.
+%
+% Two entries, westermann2026 and gopakumar2026, carry a note saying that their author list
+% and title are abbreviated as the survey recorded them rather than transcribed from the
+% published article. That note prints in the bibliography. Writing a full author list I
+% cannot verify would be the fabrication the note exists to avoid.
+
+
+% =======================================================================================
+% Registration and functional data analysis
+% =======================================================================================
+
+@article{tucker2013,
+  author  = {Tucker, J. Derek and Wu, Wei and Srivastava, Anuj},
+  title   = {Generative models for functional data using phase and amplitude separation},
+  journal = {Computational Statistics and Data Analysis},
+  year    = {2013},
+  note    = {arXiv:1212.1791},
+}
+
+@article{marron2015,
+  author  = {Marron, J. S. and Ramsay, James O. and Sangalli, Laura M. and Srivastava, Anuj},
+  title   = {Functional data analysis of amplitude and phase variation},
+  journal = {Statistical Science},
+  volume  = {30},
+  number  = {4},
+  year    = {2015},
+}
+
+@book{srivastava2016,
+  author    = {Srivastava, Anuj and Klassen, Eric P.},
+  title     = {Functional and Shape Data Analysis},
+  publisher = {Springer},
+  address   = {New York},
+  year      = {2016},
+}
+
+% =======================================================================================
+% Surrogates at small sample size
+% =======================================================================================
+
+@article{marrel2024,
+  author  = {Marrel, Amandine and Iooss, Bertrand},
+  title   = {Probabilistic surrogate modeling by {G}aussian process: a review on recent
+             insights in estimation and validation},
+  journal = {Reliability Engineering and System Safety},
+  volume  = {247},
+  pages   = {110094},
+  year    = {2024},
+}
+
+@misc{westermann2026,
+  author       = {Westermann and others},
+  title        = {Data efficiency of polynomial surrogates against neural operators},
+  year         = {2026},
+  howpublished = {arXiv:2604.00689},
+  note         = {Identifier and subject verified by the literature survey of build
+                  specification section 25; the author list and title are abbreviated as
+                  that survey recorded them and were not transcribed from the article},
+}
+
+@inproceedings{ober2021,
+  author    = {Ober, Sebastian W. and Rasmussen, Carl Edward and van der Wilk, Mark},
+  title     = {The promises and pitfalls of deep kernel learning},
+  booktitle = {Proceedings of the 37th Conference on Uncertainty in Artificial Intelligence
+               (UAI)},
+  year      = {2021},
+}
+
+@article{loeppky2009,
+  author  = {Loeppky, Jason L. and Sacks, Jerome and Welch, William J.},
+  title   = {Choosing the sample size of a computer experiment: a practical guide},
+  journal = {Technometrics},
+  volume  = {51},
+  number  = {4},
+  year    = {2009},
+}
+
+% =======================================================================================
+% Conformal prediction and calibration
+% =======================================================================================
+
+@article{jaber2025,
+  author  = {Jaber and others},
+  title   = {Sigma normalized conformal prediction for {G}aussian process regression},
+  journal = {Journal of Machine Learning for Modeling and Computing},
+  volume  = {6},
+  number  = {3},
+  year    = {2025},
+  note    = {arXiv:2401.07733},
+}
+
+@article{barber2021,
+  author  = {Barber, Rina Foygel and Cand{\`e}s, Emmanuel J. and Ramdas, Aaditya and
+             Tibshirani, Ryan J.},
+  title   = {Predictive inference with the jackknife+},
+  journal = {The Annals of Statistics},
+  volume  = {49},
+  number  = {1},
+  year    = {2021},
+}
+
+@article{diquigiovanni2022,
+  author  = {Diquigiovanni, Jacopo and Fontana, Matteo and Vantini, Simone},
+  title   = {Conformal prediction bands for multivariate functional data},
+  journal = {Journal of Multivariate Analysis},
+  volume  = {189},
+  year    = {2022},
+}
+
+@misc{diquigiovanni2021,
+  author       = {Diquigiovanni, Jacopo and Fontana, Matteo and Vantini, Simone},
+  title        = {The importance of being a band: finite sample exact distribution free
+                  prediction sets for functional data},
+  year         = {2021},
+  howpublished = {arXiv:2102.06746},
+}
+
+@article{gopakumar2026,
+  author  = {Gopakumar and others},
+  title   = {Conformal prediction for surrogate models of physical simulations},
+  journal = {Machine Learning: Science and Technology},
+  year    = {2026},
+  note    = {Recorded by the literature survey of build specification section 25; the author
+             list and title are abbreviated as that survey recorded them and were not
+             transcribed from the article},
+}
+
+@inproceedings{kuleshov2018,
+  author    = {Kuleshov, Volodymyr and Fenner, Nathan and Ermon, Stefano},
+  title     = {Accurate uncertainties for deep learning using calibrated regression},
+  booktitle = {Proceedings of the 35th International Conference on Machine Learning (ICML)},
+  year      = {2018},
+}
+
+@article{dubrule1983,
+  author  = {Dubrule, Olivier},
+  title   = {Cross validation of kriging in a unique neighborhood},
+  journal = {Mathematical Geology},
+  volume  = {15},
+  number  = {6},
+  year    = {1983},
+}
+
+@book{rasmussen2006,
+  author    = {Rasmussen, Carl Edward and Williams, Christopher K. I.},
+  title     = {Gaussian Processes for Machine Learning},
+  publisher = {MIT Press},
+  address   = {Cambridge, Massachusetts},
+  year      = {2006},
+}
+
+% =======================================================================================
+% Global sensitivity analysis
+% =======================================================================================
+
+@article{blatman2011,
+  author  = {Blatman, G{\'e}raud and Sudret, Bruno},
+  title   = {Adaptive sparse polynomial chaos expansion based on least angle regression},
+  journal = {Journal of Computational Physics},
+  volume  = {230},
+  number  = {6},
+  year    = {2011},
+}
+
+@article{luethen2021,
+  author  = {L{\"u}then, Nora and Marelli, Stefano and Sudret, Bruno},
+  title   = {Sparse polynomial chaos expansions: literature survey and benchmark},
+  journal = {SIAM/ASA Journal on Uncertainty Quantification},
+  year    = {2021},
+}
+
+@article{lamboni2011,
+  author  = {Lamboni, Matieyendou and Monod, Herv{\'e} and Makowski, David},
+  title   = {Multivariate sensitivity analysis to measure global contribution of input
+             factors in dynamic models},
+  journal = {Reliability Engineering and System Safety},
+  volume  = {99},
+  year    = {2011},
+}
+
+@article{alexanderian2020,
+  author  = {Alexanderian, Alen and Gremaud, Pierre A. and Smith, Ralph C.},
+  title   = {Variance based sensitivity analysis for time dependent processes},
+  journal = {Reliability Engineering and System Safety},
+  volume  = {196},
+  year    = {2020},
+}
+
+@article{iooss2019,
+  author  = {Iooss, Bertrand and Prieur, Cl{\'e}mentine},
+  title   = {Shapley effects for sensitivity analysis with correlated inputs: comparisons
+             with {S}obol' indices, numerical estimation and applications},
+  journal = {International Journal for Uncertainty Quantification},
+  volume  = {9},
+  number  = {5},
+  year    = {2019},
+}
+
+% =======================================================================================
+% Structural reliability
+% =======================================================================================
+
+@article{moustapha2022,
+  author  = {Moustapha, Maliki and Marelli, Stefano and Sudret, Bruno},
+  title   = {Active learning for structural reliability: survey, general framework and
+             benchmark},
+  journal = {Structural Safety},
+  year    = {2022},
+  note    = {arXiv:2106.01713},
+}
+
+@article{echard2011,
+  author  = {Echard, Beno{\^i}t and Gayton, Nicolas and Lemaire, Maurice},
+  title   = {{AK-MCS}: an active learning reliability method combining kriging and
+             {M}onte {C}arlo simulation},
+  journal = {Structural Safety},
+  volume  = {33},
+  number  = {2},
+  year    = {2011},
+}
+
+% =======================================================================================
+% Finite element modeling, codes of practice, and the solver
+% =======================================================================================
+
+@article{bazant1983,
+  author  = {Ba{\v z}ant, Zden{\v e}k P. and Oh, Byung H.},
+  title   = {Crack band theory for fracture of concrete},
+  journal = {Mat{\'e}riaux et Constructions},
+  volume  = {16},
+  number  = {3},
+  year    = {1983},
+}
+
+@article{vecchio2004,
+  author  = {Vecchio, Frank J. and Shim, Wonil},
+  title   = {Experimental and analytical reexamination of classic concrete beam tests},
+  journal = {Journal of Structural Engineering},
+  volume  = {130},
+  number  = {3},
+  year    = {2004},
+}
+
+@book{fib2010,
+  author    = {{International Federation for Structural Concrete}},
+  title     = {fib Model Code for Concrete Structures 2010},
+  publisher = {Ernst \& Sohn},
+  address   = {Berlin},
+  year      = {2013},
+}
+
+@manual{ec2,
+  title        = {Eurocode 2: Design of Concrete Structures. Part 1-1: General Rules and
+                  Rules for Buildings},
+  organization = {European Committee for Standardization},
+  address      = {Brussels},
+  year         = {2004},
+  note         = {EN 1992-1-1},
+}
+
+@manual{jcss,
+  title        = {Probabilistic Model Code, Part 3: Resistance Models},
+  organization = {Joint Committee on Structural Safety},
+  year         = {2001},
+}
+
+@manual{abaqus2025,
+  title        = {Abaqus 2025 Documentation},
+  organization = {Dassault Syst{\`e}mes Simulia},
+  year         = {2025},
+  note         = {Concrete damaged plasticity: tension stiffening types and viscoplastic
+                  regularization},
+}
+
+% =======================================================================================
+% Software the pipeline runs on. Every version here is the one pinned in pyproject.toml and
+% resolved in the version matrix at the end of docs/DESIGN_DECISIONS.md. Where a package has
+% a canonical paper I am certain of, that paper is cited; where it does not, the
+% documentation is cited by name and version rather than an author list being invented.
+% =======================================================================================
+
+@inproceedings{gpytorch,
+  author    = {Gardner, Jacob R. and Pleiss, Geoff and Bindel, David and Weinberger,
+               Kilian Q. and Wilson, Andrew Gordon},
+  title     = {{GPyTorch}: blackbox matrix matrix {G}aussian process inference with {GPU}
+               acceleration},
+  booktitle = {Advances in Neural Information Processing Systems 31 (NeurIPS)},
+  year      = {2018},
+  note      = {Version 1.15.2 as pinned in pyproject.toml},
+}
+
+@article{sklearn,
+  author  = {Pedregosa, Fabian and Varoquaux, Ga{\"e}l and Gramfort, Alexandre and Michel,
+             Vincent and Thirion, Bertrand and Grisel, Olivier and Blondel, Mathieu and
+             Prettenhofer, Peter and Weiss, Ron and Dubourg, Vincent and Vanderplas, Jake
+             and Passos, Alexandre and Cournapeau, David and Brucher, Matthieu and Perrot,
+             Matthieu and Duchesnay, {\'E}douard},
+  title   = {Scikit-learn: machine learning in {P}ython},
+  journal = {Journal of Machine Learning Research},
+  volume  = {12},
+  year    = {2011},
+  note    = {Version 1.9.0 as pinned in pyproject.toml},
+}
+
+@article{salib,
+  author  = {Herman, Jon and Usher, Will},
+  title   = {{SALib}: an open source {P}ython library for sensitivity analysis},
+  journal = {Journal of Open Source Software},
+  volume  = {2},
+  number  = {9},
+  year    = {2017},
+  note    = {Version 1.5.2 as pinned in pyproject.toml},
+}
+
+@manual{fdasrsf,
+  title        = {fdasrsf: Functional Data Analysis using the Square Root Slope Framework},
+  organization = {fdasrsf project},
+  year         = {2026},
+  note         = {Python package documentation for version 2.6.10, the version pinned in
+                  pyproject.toml, consulted 2026-08-31. Cited by name and version because
+                  the package has no canonical paper this project could verify},
+}
+
+@manual{openturns,
+  title        = {OpenTURNS documentation},
+  organization = {OpenTURNS consortium},
+  year         = {2026},
+  note         = {Documentation for version 1.27, the version pinned in pyproject.toml,
+                  consulted 2026-08-31. Cited by name and version rather than by a citation
+                  this project could not verify},
+}

@@ -1401,6 +1401,83 @@ against that with the determinism tests run before and after. If the single thre
 come in under 60 s, that is a finding about the fit and build spec 10.3 needs revisiting, which
 is a different conversation from this one.
 
+## 2026-08-31, the report bibliography
+
+The released PDF cited nothing. Build spec section 25 has carried the verified reference list
+since the survey of 2026-08-28 and the report's prose named several of those works in plain text
+without ever pointing at them, so this is a gap rather than a position. `report/references.bib`
+now holds all 33 works and `main.tex` wires 31 `\cite` commands into them. Three choices in that
+change were not obvious and are recorded here.
+
+### Page ranges: there are none, and that is the dash decision
+
+Ground rule 3 bans `--` from `.tex` prose because TeX turns it into an en dash. A page range is
+exactly that sequence, and BibTeX writes it into `main.bbl` from a `pages` field with two page
+numbers in it. So the question was where the rule stops.
+
+Read literally the rule covers prose in `.tex` files, and `main.bbl` is neither prose nor written
+by me. I checked `scripts/dash_lint.py` before deciding rather than after: it bans the two
+characters U+2014 and U+2013 anywhere in the tree, and it says nothing at all about the ASCII
+sequence `--`, so neither a `.bib` file with page ranges nor the `.bbl` BibTeX writes from it
+would have failed the lint. The rule would have been kept by the machine and broken by the
+document.
+
+Three options.
+
+- **Exempt machine written `.bbl` output in the lint.** Refused, and it is the option I refused
+  most easily. The lint does not currently look at that sequence at all, so the exemption would
+  have documented a rule that is not enforced, which is worse than either enforcing it or
+  dropping it.
+- **Spell page ranges out, first page then the word "to" then last page.** Refused. It requires a custom `.bst` or hand
+  edited `.bbl`, and a hand edited `.bbl` is a generated file with a person's fingerprints on it,
+  which this project does not do anywhere else.
+- **Give BibTeX no page ranges to typeset.** Chosen. Every entry is located by journal, volume,
+  issue and year, by article number where the journal uses one, and by the arXiv id where build
+  spec section 25 records one. `main.bbl` contains zero occurrences of `--`, verified by grep
+  after the build, and the file is enough to find any of the 33 works.
+
+What this costs: a reader who wants the exact first and last page of an article has to open the volume.
+What it buys is that the ban holds through the whole document including the part BibTeX writes,
+without a lint exemption standing in for a rule.
+
+### No DOI is written anywhere in the bibliography
+
+Related and stricter. Ground rule 1 bans fabricating a citation, a URL, or a version, and a DOI
+recalled rather than resolved is all three at once: it looks authoritative, it is one character
+away from pointing at a different paper, and nothing in this repository can check it. Build spec
+section 25 records journal, volume, issue and year for most of these works and an arXiv id for
+five of them, and it records no DOIs. So the bibliography carries exactly what the survey
+verified. Where a work has an arXiv id in the spec, the entry has it. Where it does not, the
+entry stops at the volume and year. If somebody later resolves the DOIs against a real index,
+adding them is a small commit and a real improvement; guessing them now would have been the
+defect this project exists to stop.
+
+Two entries, `westermann2026` and `gopakumar2026`, are works the survey recorded by lead author
+and venue without a transcribed title or author list. Their `note` field says so in the printed
+bibliography rather than in a comment nobody reads. That is deliberate: an abbreviated record
+that admits what it is beats a plausible looking one that nobody can check.
+
+Software is the same rule applied to a different kind of source. GPyTorch, scikit-learn and SALib
+are cited by their canonical papers, which are unambiguous. fdasrsf and OpenTURNS are cited as
+documentation by name and pinned version, because I could not verify a canonical paper for either
+and inventing an author list for a citation is not better than citing the manual.
+
+### Style: plainnat in numeric mode, and no committed `.bbl`
+
+`\usepackage[numbers,sort&compress]{natbib}` with `\bibliographystyle{plainnat}`. Numeric because
+the report's prose already names its sources in the sentence ("the construction is that of
+Diquigiovanni, Fontana and Vantini"), so an author year label beside the name would say it twice;
+`sort&compress` because several sentences cite two or three works at once. natbib is loaded
+before hyperref, which is the order hyperref needs to patch it.
+
+The `.bbl` is not committed. `.gitignore` already covers `report/*.bbl` and `report/*.blg` and I
+left that alone, because the alternative only makes sense if the CI container cannot run BibTeX,
+and it can: `.github/workflows/report.yml` builds on the TeX Live full image, latexmk runs BibTeX
+itself, and `report/references.bib` is committed exactly as the table fragments and the figures
+are. The workflow's latexmk arguments now say `-bibtex` explicitly. It ran BibTeX without that
+flag too, on the default of running it whenever a `.bib` file turns up, but a build that depends
+on a default nobody wrote down is a build that breaks quietly when the image changes.
+
 <!-- BEGIN RESOLVED VERSIONS -->
 
 ### Resolved version matrix, 2026-08-31

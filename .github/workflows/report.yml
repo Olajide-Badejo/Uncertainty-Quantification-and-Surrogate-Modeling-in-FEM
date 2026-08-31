@@ -8,6 +8,11 @@ name: report
 # committed fragments under report/tables/, and every figure through the committed sources
 # under report/figures/, which is exactly why those fragments are committed while the PDF is
 # not. A staleness test in the main CI workflow is what keeps them honest.
+#
+# The bibliography is the same deal: report/references.bib is committed and latexmk runs
+# BibTeX over it here, so main.bbl and main.blg stay generated artifacts and stay gitignored.
+# The -bibtex flag below says that out loud rather than relying on the container's latexmk
+# defaulting to run BibTeX when it happens to find a .bib file.
 on:
   push:
     branches:
@@ -42,7 +47,7 @@ jobs:
           root_file: main.tex
           working_directory: report
           latexmk_use_xelatex: false
-          args: -pdf -halt-on-error -interaction=nonstopmode -file-line-error
+          args: -pdf -bibtex -halt-on-error -interaction=nonstopmode -file-line-error
 
       - name: Upload the PDF
         uses: actions/upload-artifact@v4
