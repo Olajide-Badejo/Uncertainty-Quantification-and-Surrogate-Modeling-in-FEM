@@ -377,8 +377,8 @@ UFEM_2.0/
   uncertainty was manufactured by an amplification factor and a standard deviation floor, and
   its own diagnostic output proved it. Nothing from it is repeated as a result here.
 - **v1.1.0**, this overhaul, built from scratch on the same inherited campaign behind the gates
-  above. The in progress version is `1.1.0.dev0`, declared in `pyproject.toml` and reported by
-  `ufem doctor`.
+  above. The in progress version is `1.1.0`, declared in `pyproject.toml` and reported by `ufem
+  doctor`.
 
 <!-- END INJECTED: versioning -->
 

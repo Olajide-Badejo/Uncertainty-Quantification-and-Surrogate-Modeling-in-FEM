@@ -1403,13 +1403,13 @@ is a different conversation from this one.
 
 <!-- BEGIN RESOLVED VERSIONS -->
 
-### Resolved version matrix, 2026-08-30
+### Resolved version matrix, 2026-08-31
 
 Written by `ufem doctor` on Windows-11-10.0.26200-SP0. Regenerate it, do not edit it.
 
 | Component | Resolved |
 |---|---|
-| ufem | 1.1.0.dev0 |
+| ufem | 1.1.0 |
 | python | 3.14.0 |
 | numpy | 2.5.2 |
 | scipy | 1.18.1 |
@@ -1425,6 +1425,6 @@ Written by `ufem doctor` on Windows-11-10.0.26200-SP0. Regenerate it, do not edi
 | SALib | 1.5.2 |
 | fdasrsf | 2.6.10 |
 | torch device | torch 2.13.0+cpu, CUDA build None, no visible GPU (CPU path) |
-| config SHA-256 | `e8bd99810d8bc145347d236d0a794ac50258431590378262b5fbb142a60ace0f` |
+| config SHA-256 | `d35707765c5fbb9c13b3f39d9d4adc9596fc42aafdae9fe7e7393b5a943da4b8` |
 
 <!-- END RESOLVED VERSIONS -->
