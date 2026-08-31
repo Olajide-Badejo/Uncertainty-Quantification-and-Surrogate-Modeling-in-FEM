@@ -58,6 +58,12 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install numpy==2.5.2 scipy==1.18.1 pandas==3.0.5 scikit-learn==1.9.0 pyarrow==25.0.1 pydantic==2.13.5 PyYAML==6.0.3 pytest==9.1.1 hypothesis==6.165.10 pytest-regressions==2.11.0
 
+      # This job is where the README gate of ground rule 10 lands. Its generator imports only
+      # the light stack, so tests/test_readme_consistency.py collects and runs here: the marker
+      # contract, the ban on numeric claims in the prose outside the markers, the media and
+      # document links, and the dash assertion. The byte identity half of the gate needs the
+      # artifact store, which no CI job has by design, so it skips here and runs on a machine
+      # that has one, exactly like the data card and model card staleness gates it copies.
       - name: Fast tests
         run: pytest tests -m "not slow and not fullstack"
 
