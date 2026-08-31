@@ -73,14 +73,21 @@ recorded with its run URL and the specific job it stopped, in the "CI proof of f
 entry of `docs/ENGINEERING_LOG.md`. The fifth run in that table is the green one with all four
 faults reverted.
 
-One test in the suite has a verdict that depends on what else the machine is doing, and it is
-named here rather than left to be discovered: `test_the_fit_budget_of_build_spec_10_3_was_met`
-asserts on a wall clock with a 10 percent margin against a fit whose run to run spread is about
-14 percent. It went red during this sweep's first full run, under concurrent load, and green at
-58.03 s with nothing else running, with every artifact reproducing its digest bitwise both
-times. The budget was not widened. The P5 and P10 entries of the engineering log carry both
-measurements. Read that assertion as a regression alarm and recheck it on an idle machine before
-acting on it.
+**One open item, and it is the only one.**
+`tests/test_surrogate.py::test_the_fit_budget_of_build_spec_10_3_was_met` fails on a machine that
+has the artifact store and a busy desktop. It asserts that the Gaussian process fit came in under
+the 60 s of build spec 10.3, which states that budget for a single threaded fit; the stage pins no
+thread count, so torch runs it on 20 threads and the manifest records a contention measurement
+rather than a cost. Four refits during P10, every one of them writing byte identical artifacts,
+measured 65.79, 58.03, 74.0 and 86.4 seconds as the desktop got busier.
+
+The budget was not widened, the threads were not pinned, and a fifth rerun that might have come in
+under 60 s was deliberately not taken. The options and the choice are in
+`docs/DESIGN_DECISIONS.md` under build spec 24, and the measurements are in the P10 entry of
+`docs/ENGINEERING_LOG.md`. Nothing this repository commits is red: `experiments/results/` is
+gitignored and the assertion skips wherever the store is absent, which is every CI job. The fix,
+for whoever opens the next phase, is to pin the fit to one thread and set the assertion against
+the single threaded cost, with the determinism tests run either side of the change.
 
 ## 3. Simultaneous ninety percent functional bands and scalar jackknife plus intervals have leave one out coverage whose Wilson interval contains 0.90
 

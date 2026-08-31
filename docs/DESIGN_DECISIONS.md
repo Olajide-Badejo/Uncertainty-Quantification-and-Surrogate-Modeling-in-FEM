@@ -1363,6 +1363,44 @@ before printing the upload command, and `scripts/readme_inject.py` imports the f
 the download URL. `tests/test_readme_consistency.py` asserts the two agree. The staged copy is
 gitignored: it is a build product of a build product.
 
+### Deviation: the fit budget assertion is left measuring the wrong quantity, knowingly
+
+Build spec 24 says that when reality disagrees with the specification, stop, write the
+discrepancy and the options down, choose deliberately, and record the choice. This is that entry.
+
+`tests/test_surrogate.py::test_the_fit_budget_of_build_spec_10_3_was_met` asserts that the
+Gaussian process fit came in under the 60 s of build spec 10.3, which states that budget for a
+**single threaded** fit. `ufem.surrogate` pins no thread count, so torch takes its default, which
+on this machine is 20 threads over 28 cores. The number the assertion reads out of the manifest
+is therefore how long the fit took while sharing a machine, not how long the fit costs. Four
+refits during P10, all writing byte identical artifacts, measured 65.79, 58.03, 74.0 and 86.4
+seconds as the desktop got busier. P4 measured 54.99 and P5 measured 53.95 on quiet machines, and
+neither of those was the single threaded number either.
+
+Three options were on the table.
+
+- **Widen the budget.** Refused. Build spec 10.3 says to stop and look rather than to widen it,
+  and a budget set to whatever the last measurement happened to be stops catching the regression
+  it exists for.
+- **Pin the fit to one thread**, so the measurement is the quantity the specification names. This
+  is the right fix and it is not a P10 change: it alters how a stage runs, every downstream cache
+  key and digest hangs off that stage's outputs, and the last hour of the last phase is the worst
+  possible time to find out that reduction order was load bearing after all. The evidence that it
+  probably is not, four bitwise identical refits at four different thread contention levels, is
+  encouraging rather than sufficient.
+- **Leave it, write it down, hand it on.** Chosen.
+
+What this costs: on a machine with the artifact store and a busy desktop, `pytest tests` reports
+one failure. Nothing committed is red, because `experiments/results/` is gitignored and the
+assertion skips wherever the store is absent, which is every CI job. What it buys is that the
+gate is still there and still says something true, which is that this fit took longer than 60 s
+on the machine that ran it.
+
+Whoever picks this up: pin the threads, measure the single threaded cost, and set the assertion
+against that with the determinism tests run before and after. If the single threaded fit does not
+come in under 60 s, that is a finding about the fit and build spec 10.3 needs revisiting, which
+is a different conversation from this one.
+
 <!-- BEGIN RESOLVED VERSIONS -->
 
 ### Resolved version matrix, 2026-08-30

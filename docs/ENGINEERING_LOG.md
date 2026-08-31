@@ -1270,23 +1270,45 @@ changed. Nothing in the definition of done depends on the number. The one place 
 mechanically is `scripts/make_release.py`, which refuses to print a release command while
 `pyproject.toml` still declares a `.dev` version.
 
-**The fit budget assertion went red on a busy machine, exactly as P5 predicted it would.** The
-sweep's first full suite run was done while a `latexmk` build and two other interpreters were
-running on the same box, and `tests/test_surrogate.py::test_the_fit_budget_of_build_spec_10_3_was_met`
-failed: the determinism test refitted the surrogate stage in place and the manifest came back
-with `gp_fit_wall_time_s = 65.79` against the 60 s budget. The P5 entry above had already
-diagnosed this one in as many words, after the same assertion went red at 61.28 s: the budget is
-not systematically exceeded, the assertion is on a wall clock, and a wall clock assertion with 14
-percent of run to run spread and a 10 percent margin will go red again on a busy machine.
+**The fit budget assertion went red, P5 predicted it would, and P10 found out why.** The
+sweep's first full suite run failed
+`tests/test_surrogate.py::test_the_fit_budget_of_build_spec_10_3_was_met`: the determinism test
+refitted the surrogate stage in place and the manifest came back with
+`gp_fit_wall_time_s = 65.79` against the 60 s budget. The P5 entry above had already diagnosed
+that once, at 61.28 s, and concluded that the budget is not systematically exceeded and that a
+wall clock assertion with 14 percent of run to run spread and a 10 percent margin will go red
+again on a busy machine.
 
-It was handled the way build spec 10.3 says, which is to look rather than to widen the budget.
-Refitting the stage with nothing else running measures **58.03 s**, inside the budget, and every
-one of the twelve artifacts it wrote reproduced its digest bitwise, which is the determinism
-claim doing its job: the only thing that changed in the manifest was the clock. The budget stays
-at 60 s and the assertion stays as it is. What is worth carrying forward is that this is the only
-gate in the project whose verdict depends on what else the machine is doing, so it should be read
-as a regression alarm rather than as a pass or fail, and it should be rechecked on an idle
-machine before anybody acts on it.
+Refitting with nothing else of mine running measured **58.03 s** and the test went green, which
+looked like the end of it. It was not. Over the rest of the phase the same refit, of the same
+stage, at the same hyperparameters, measured **65.79, 58.03, 74.0 and 86.4 seconds**, in that
+order, on a machine whose only other load was the desktop browser at about 30 percent. Every one
+of those four runs wrote the twelve surrogate artifacts with identical digests, so the fit itself
+did not move at all: `basis_amplitude.npy` is `e1c22eb9a4ba` after all four. The only thing that
+moved was the clock.
+
+Four measurements, three of them over budget, is not a flake to be rerun until it agrees. Looking
+at it properly, as build spec 10.3 asks, the assertion is measuring the wrong quantity. The
+budget is stated for a **single threaded** fit. The stage pins no thread count, so torch takes
+its default of 20 threads on this machine's 28 cores, and the number in the manifest is therefore
+a contention measurement: it degrades as the desktop takes cores away, which is exactly the
+monotone trend above. The 53.95 s of P5 and the 54.99 s of P4 were that same multi threaded fit
+on a quiet machine, not the single threaded number the specification is talking about, so the
+assertion has never once tested its own claim.
+
+Three options, and the choice is recorded with them in `docs/DESIGN_DECISIONS.md`: widen the
+budget, which build spec 10.3 explicitly forbids and which would hide a real regression later;
+pin the fit to one thread so the measurement matches the claim, which is a behavior change to a
+stage whose outputs every downstream digest depends on and is not a thing to do in the last hour
+of the last phase; or leave the gate exactly as it is, write down that it measures contention
+rather than cost, and hand it to whoever opens the next phase. P10 chose the third, and the fifth
+rerun that might have turned it green was deliberately not taken, because rerunning a measurement
+until it agrees is the practice this project exists to forbid.
+
+Nothing committed is red. `experiments/results/` is gitignored, so the manifest carrying
+`fit_budget_met = false` is local to this machine, and the assertion skips wherever the artifact
+store is absent, which is every CI job. What a fresh checkout gets is a stage that reproduces its
+artifacts bitwise and an assertion that will report whatever that machine's clock says.
 
 **The GIF was rejected on review, and the rejection was right.** The repo owner's words: parts
 are cut off, and it does not really show the usefulness of the project or how to use it. Both
@@ -1349,8 +1371,9 @@ quick start and nothing else, which is a strange omission for the thing at the t
 It now has its five panels described and an anchor, which is what the GIF caption and the top
 link resolve to.
 
-**Gates.** **634 tests pass** with everything selected on an idle machine, up from 606 at
-P9; the 28 new ones are
+**Gates.** **633 of 634 pass** with everything selected, up from 606 at P9; the one failure
+is the fit budget assertion above, which is a wall clock on a shared machine and is not red
+in anything this repository commits. The 28 new tests are
 `tests/test_readme_consistency.py`. 615 pass under `not slow`, which is the `test-full` CI job's
 selection, and 486 under `not slow and not fullstack`, which is what the light stack `test-fast`
 job runs on a machine with no torch and no artifact store. `ruff check src tests scripts`,
