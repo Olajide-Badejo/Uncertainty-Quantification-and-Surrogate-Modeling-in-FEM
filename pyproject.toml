@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ufem"
-version = "1.1.0.dev0"
+version = "1.1.0"
 description = "Calibrated surrogate modeling and uncertainty quantification of a softening RC beam"
 readme = "README.md"
 requires-python = ">=3.14"
