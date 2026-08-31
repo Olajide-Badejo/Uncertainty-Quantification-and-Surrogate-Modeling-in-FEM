@@ -188,12 +188,12 @@ worth more than one that reports a ranking it cannot support.
 | Registration | Calibration |
 |---|---|
 | ![Registration before and after](docs/media/fig_registration_before_after.png) | ![Simultaneous conformal band](docs/media/fig_conformal_band.png) |
-| Amplitude separated from phase by landmarks and a square root slope representation, so the principal components stop encoding when the peak happened. | Held out curves against the simultaneous sup norm band. Coverage over the whole curve at once, measured on left out runs rather than asserted. |
+| The curve family before and against after registration, with the cross sectional mean through it. Unregistered, averaging flattens the peak that every run has; registered, the mean keeps it. | Held out runs against the simultaneous sup norm band, at the median, the ninetieth percentile and the worst case. Coverage over the whole curve at once, measured rather than asserted. |
 
 | Prediction | Propagation |
 |---|---|
 | ![Predicted against actual peak load](docs/media/fig_pmax_predicted_vs_actual.png) | ![Propagated curve envelope with limit states](docs/media/fig_curve_envelope.png) |
-| Predicted against actual peak load on left out runs, with the calibrated interval on every point. The quantity the reliability analysis thresholds. | The propagated curve envelope with the limit states drawn on it, aleatory and epistemic layers kept apart and never added. |
+| Predicted against actual peak load on left out runs, the surrogate beside the two baselines that come closest to it. This is the quantity the reliability analysis thresholds. | The propagated response: the median predicted curve inside its inner and outer envelopes, with the share of the sample that fell outside the validity domain stated on its face. |
 
 All six are exported by `scripts/make_readme_media.py` from the same figure functions the
 report compiles, so a figure here and the same figure in the PDF cannot disagree.
